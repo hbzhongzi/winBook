@@ -1,0 +1,271 @@
+:root {
+  --bg: #eef1f5;
+  --border: #d8dee7;
+  --border-soft: #e5e9f0;
+  --text: #1f2937;
+  --text-2: #6b7280;
+  --text-3: #94a3b8;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --error-bg: #fef2f2;
+  --error-border: #fecaca;
+  --error-text: #b91c1c;
+  --sidebar-bg: #f8fafc;
+  --active-bg: #eff6ff;
+  --page-shadow: 0 1px 3px rgba(15, 23, 42, .12), 0 10px 28px rgba(15, 23, 42, .10);
+  --badge-epub-bg: #f3e8ff; --badge-epub-text: #7e22ce;
+  --badge-pdf-bg: #fee2e2;  --badge-pdf-text: #b91c1c;
+  --badge-txt-bg: #d1fae5;  --badge-txt-text: #047857;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app { height: 100%; display: flex; flex-direction: column; background: #fff; }
+
+/* ===== 工具栏 ===== */
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 15px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: .6; cursor: default; }
+.book-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.book-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+.book-name-empty { font-weight: 400; color: var(--text-3); }
+.badge { font-size: 11px; border-radius: 999px; padding: 2px 9px; font-weight: 500; }
+.badge-epub { background: var(--badge-epub-bg); color: var(--badge-epub-text); }
+.badge-pdf  { background: var(--badge-pdf-bg);  color: var(--badge-pdf-text); }
+.badge-txt  { background: var(--badge-txt-bg);  color: var(--badge-txt-text); }
+.book-size { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+
+/* ===== 错误条 ===== */
+.errorbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--error-bg);
+  border-bottom: 1px solid var(--error-border);
+  color: var(--error-text);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.errorbar .err-code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+  background: #fee2e2;
+  color: var(--error-text);
+  border-radius: 4px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+.errorbar .err-msg { flex: 1; min-width: 0; }
+.errorbar .err-close {
+  border: none;
+  background: transparent;
+  color: var(--error-text);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.errorbar .err-close:hover { background: #fee2e2; }
+
+/* ===== 内容区 ===== */
+.content { flex: 1; min-height: 0; display: flex; }
+.state-host { flex: 1; min-width: 0; display: flex; }
+.state { flex: 1; min-width: 0; display: none; flex-direction: column; }
+.state.active { display: flex; }
+
+/* ===== TXT ===== */
+.txt-scroll { flex: 1; overflow: auto; }
+pre.txt-viewer {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 24px;
+  margin: 0;
+  font-family: "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.8;
+  color: #374151;
+}
+
+/* ===== PDF ===== */
+.pdf-canvas-area {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+  padding: 22px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+.pdf-page {
+  position: relative;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  line-height: 0;
+}
+.pdf-canvas { display: block; }
+.pdf-footer {
+  position: absolute;
+  bottom: 10px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1;
+}
+.pdf-controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-soft);
+  background: #fafbfc;
+}
+.pg-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.pg-btn:hover:not(:disabled) { background: #f1f5f9; }
+.pg-btn:disabled { opacity: .45; cursor: not-allowed; }
+.pg-indicator {
+  font-size: 13px;
+  color: var(--text-2);
+  min-width: 72px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.zoom-chip {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-2);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+/* ===== EPUB ===== */
+.toc-sidebar {
+  width: 224px;
+  flex: none;
+  border-right: 1px solid var(--border-soft);
+  background: var(--sidebar-bg);
+  overflow: auto;
+  padding: 14px 0 20px;
+}
+.toc-title { font-size: 11px; color: var(--text-3); letter-spacing: 1px; padding: 0 16px 8px; }
+.toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.toc-item:hover { background: #f1f5f9; }
+.toc-item.active {
+  background: var(--active-bg);
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+.epub-content { flex: 1; overflow: auto; padding: 34px 44px 60px; }
+
+/* ===== 空态 / 解析失败 ===== */
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+}
+.welcome .welcome-icon { color: #cbd5e1; margin-bottom: 6px; }
+.welcome .welcome-title { font-size: 15px; color: #475569; }
+.welcome .welcome-hint { font-size: 13px; color: var(--text-2); }
+.welcome .welcome-sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+/* ===== 状态栏 ===== */
+.statusbar {
+  flex: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border-soft);
+  background: #fafbfc;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.statusbar .path {
+  font-family: Consolas, "Courier New", monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .toc-sidebar { width: 150px; }
+  .epub-content { padding: 22px 20px 48px; }
+}
