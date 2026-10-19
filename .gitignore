@@ -1,3 +1,5 @@
 build/bin
 node_modules
 frontend/dist
+/book-editor.exe
+frontend/package.json.md5
