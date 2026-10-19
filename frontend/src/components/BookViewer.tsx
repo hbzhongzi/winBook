@@ -5,10 +5,11 @@ import EpubViewer from "./EpubViewer";
 
 type Props = {
   book: main.BookData | null;
+  openCount: number;
   onDetail: (detail: string) => void;
 };
 
-export default function BookViewer({ book, onDetail }: Props) {
+export default function BookViewer({ book, openCount, onDetail }: Props) {
   if (!book) {
     return (
       <main className="content">
@@ -33,8 +34,9 @@ export default function BookViewer({ book, onDetail }: Props) {
 
   return (
     <main className="content">
-      {/* key 变化时整体重挂载，确保旧 Viewer 执行 destroy / 渲染任务取消 */}
-      <div className="state-host" key={book.path + ":" + book.size}>
+      {/* key 变化时整体重挂载，确保旧 Viewer 执行 destroy / 渲染任务取消；
+          openCount 保证重复打开同一文件（path+size 相同）也会重建 */}
+      <div className="state-host" key={book.path + ":" + book.size + ":" + openCount}>
         {book.format === "txt" && <TextViewer text={book.text ?? ""} />}
         {book.format === "pdf" && <PdfViewer dataBase64={book.dataBase64 ?? ""} />}
         {book.format === "epub" && (

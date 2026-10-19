@@ -23,15 +23,23 @@ export default function PdfViewer({ dataBase64 }: Props) {
   const [current, setCurrent] = useState(1);
   const [failed, setFailed] = useState(false);
 
+  const cancelRenderTask = useCallback(() => {
+    const task = renderTaskRef.current;
+    renderTaskRef.current = null;
+    if (!task) return;
+    try {
+      task.cancel();
+    } catch {
+      // 已完成/已取消的任务再取消时忽略
+    }
+  }, []);
+
   const renderPage = useCallback(async (pageNum: number) => {
     const pdf = pdfRef.current;
     const canvas = canvasRef.current;
     if (!pdf || !canvas) return;
     // 取消未完成的渲染任务，避免快速翻页竞态
-    if (renderTaskRef.current) {
-      renderTaskRef.current.cancel();
-      renderTaskRef.current = null;
-    }
+    cancelRenderTask();
     try {
       const page = await pdf.getPage(pageNum);
       const viewport = page.getViewport({ scale: SCALE });
@@ -47,9 +55,9 @@ export default function PdfViewer({ dataBase64 }: Props) {
         setFailed(true);
       }
     }
-  }, []);
+  }, [cancelRenderTask]);
 
-  // 加载文档并渲染第一页
+  // 加载文档；页码由下方翻页 effect 统一触发渲染（pageCount 0→N 即渲染首页）
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -63,21 +71,17 @@ export default function PdfViewer({ dataBase64 }: Props) {
         pdfRef.current = pdf;
         setPageCount(pdf.numPages);
         setCurrent(1);
-        await renderPage(1);
       } catch {
         if (!cancelled) setFailed(true);
       }
     })();
     return () => {
       cancelled = true;
-      if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
-        renderTaskRef.current = null;
-      }
+      cancelRenderTask();
       pdfRef.current?.cleanup();
       pdfRef.current = null;
     };
-  }, [dataBase64, renderPage]);
+  }, [dataBase64, cancelRenderTask]);
 
   // 翻页渲染
   useEffect(() => {

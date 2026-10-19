@@ -15,6 +15,8 @@ export default function App() {
   const [error, setError] = useState<AppError | null>(null);
   const [loading, setLoading] = useState(false);
   const [detail, setDetail] = useState("");
+  // 每次成功打开自增：重复打开同一文件（path+size 相同）时也能强制重建 Viewer
+  const [openCount, setOpenCount] = useState(0);
 
   // 打开图书：loading → 成功分派 / 取消静默 / 失败错误条（叠加态）
   const handleOpen = useCallback(async () => {
@@ -24,6 +26,7 @@ export default function App() {
       const result = await OpenBook();
       if (!result) return; // 用户取消：静默，不提示
       setBook(result);
+      setOpenCount((n) => n + 1);
       setDetail("");
       await WindowSetTitle("BookEditor — " + result.name);
     } catch (e) {
@@ -40,7 +43,7 @@ export default function App() {
     <div className="app">
       <Toolbar book={book} loading={loading} onOpen={handleOpen} />
       <ErrorBar error={error} onClose={() => setError(null)} />
-      <BookViewer book={book} onDetail={setDetail} />
+      <BookViewer book={book} openCount={openCount} onDetail={setDetail} />
       <StatusBar book={book} detail={detail} />
     </div>
   );
