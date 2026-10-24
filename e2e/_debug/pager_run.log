@@ -1,0 +1,71 @@
+[09:56:37] ==== 第 1 轮翻页导航验证开始 ====
+[09:56:39] app pid=15184 hwnd=1312030 class=wailsWindow text='BookEditor'
+[09:56:39] virtual screen: (0,0) 1920x1080; window rect=(320, 90, 1600, 950) dpi=96
+[09:56:42] open_file(12.epub): edit=(655, 648, 738, 665) combo=(651, 643, 758, 669)
+[09:56:42] open_file(12.epub): 点击输入框 (696, 656)
+[09:56:43] open_file(12.epub): 已设置路径，回车
+[09:56:44] open_file(12.epub): 对话框已关闭，窗口标题='BookEditor — 12.epub'
+[09:56:44] pager: open_file -> True, title='BookEditor — 12.epub'
+[09:56:44] move_window -> (40,60) ok=True rect=(40, 60, 1320, 920)
+[09:56:47] shot pv-00-book.png bbox=(40, 60, 1320, 920)
+[09:56:47] click client(1184,27) -> screen(1232,118)
+[09:56:49] shot pv-01-page-mode.png bbox=(40, 60, 1320, 920)
+[09:56:52] shot pv-02-pager-hidden.png bbox=(40, 60, 1320, 920)
+[09:56:53] shot pv-03-pager-shown.png bbox=(40, 60, 1320, 920)
+[09:56:53] [PASS] A61-鼠标移动复现按钮 diff=143
+[09:56:53] pager 组(截图): x 595..684 y 773..814 → 客户区 y 742..783（窗口客户高 828，贴底余量 45px）
+[09:56:53] [PASS] A60-按钮组贴底悬浮 顶边客户区 y=742
+[09:56:57] shot pv-04-pager-hidden-again.png bbox=(40, 60, 1320, 920)
+[09:56:57] [PASS] A61-闲置自动隐藏 diff=143
+[09:56:57] [PASS] A61-隐藏态稳定（两次隐藏截图一致） diff=0
+[09:57:01] shot pv-08-hover-hold.png bbox=(40, 60, 1320, 920)
+[09:57:01] [FAIL] A64-悬停中停留不自动隐藏 diff=143
+[09:57:02] shot pv-09-hover-leave.png bbox=(40, 60, 1320, 920)
+[09:57:02] [FAIL] A65-移出后短计时隐藏 diff=0
+[09:57:02] click client(1184,27) -> screen(1232,118)
+[09:57:04] [PASS] A62-window 级 ArrowRight 翻页（焦点在正文外） diff=33008
+[09:57:04] shot pv-05-kbd-window.png bbox=(40, 60, 1320, 920)
+[09:57:04] click client(300,300) -> screen(348,391)
+[09:57:06] [PASS] A63-iframe 内焦点 ArrowRight 仍生效 diff=34003
+[09:57:06] shot pv-06-kbd-iframe.png bbox=(40, 60, 1320, 920)
+[09:57:07] click client(660,762) -> screen(708,853)
+[09:57:08] [PASS] A61-点击翻页按钮生效 diff=33127
+[09:57:08] shot pv-07-pager-click.png bbox=(40, 60, 1320, 920)
+[09:57:08] ==== 翻页导航验证: 7/9 通过，失败: ['A64-悬停中停留不自动隐藏', 'A65-移出后短计时隐藏'] ====
+[09:57:08] ==== 第 1 轮存在失败项，整体重试 ====
+[09:57:08] ==== 第 2 轮翻页导航验证开始 ====
+[09:57:10] app pid=1124 hwnd=28050660 class=wailsWindow text='BookEditor'
+[09:57:10] virtual screen: (0,0) 1920x1080; window rect=(320, 90, 1600, 950) dpi=96
+[09:57:13] open_file(12.epub): edit=(655, 648, 738, 665) combo=(651, 643, 758, 669)
+[09:57:13] open_file(12.epub): 点击输入框 (696, 656)
+[09:57:14] open_file(12.epub): 已设置路径，回车
+[09:57:15] open_file(12.epub): 对话框已关闭，窗口标题='BookEditor — 12.epub'
+[09:57:15] pager: open_file -> True, title='BookEditor — 12.epub'
+[09:57:15] move_window -> (40,60) ok=True rect=(40, 60, 1320, 920)
+[09:57:18] shot pv-00-book.png bbox=(40, 60, 1320, 920)
+[09:57:18] click client(1184,27) -> screen(1232,118)
+[09:57:20] shot pv-01-page-mode.png bbox=(40, 60, 1320, 920)
+[09:57:23] shot pv-02-pager-hidden.png bbox=(40, 60, 1320, 920)
+[09:57:24] shot pv-03-pager-shown.png bbox=(40, 60, 1320, 920)
+[09:57:24] [PASS] A61-鼠标移动复现按钮 diff=143
+[09:57:24] pager 组(截图): x 595..684 y 773..814 → 客户区 y 742..783（窗口客户高 828，贴底余量 45px）
+[09:57:24] [PASS] A60-按钮组贴底悬浮 顶边客户区 y=742
+[09:57:28] shot pv-04-pager-hidden-again.png bbox=(40, 60, 1320, 920)
+[09:57:28] [PASS] A61-闲置自动隐藏 diff=143
+[09:57:28] [PASS] A61-隐藏态稳定（两次隐藏截图一致） diff=0
+[09:57:32] shot pv-08-hover-hold.png bbox=(40, 60, 1320, 920)
+[09:57:32] [FAIL] A64-悬停中停留不自动隐藏 diff=143
+[09:57:33] shot pv-09-hover-leave.png bbox=(40, 60, 1320, 920)
+[09:57:33] [FAIL] A65-移出后短计时隐藏 diff=0
+[09:57:33] click client(1184,27) -> screen(1232,118)
+[09:57:35] [PASS] A62-window 级 ArrowRight 翻页（焦点在正文外） diff=33008
+[09:57:35] shot pv-05-kbd-window.png bbox=(40, 60, 1320, 920)
+[09:57:35] click client(300,300) -> screen(348,391)
+[09:57:38] [PASS] A63-iframe 内焦点 ArrowRight 仍生效 diff=34003
+[09:57:38] shot pv-06-kbd-iframe.png bbox=(40, 60, 1320, 920)
+[09:57:38] click client(660,762) -> screen(708,853)
+[09:57:40] [PASS] A61-点击翻页按钮生效 diff=33127
+[09:57:40] shot pv-07-pager-click.png bbox=(40, 60, 1320, 920)
+[09:57:40] ==== 翻页导航验证: 7/9 通过，失败: ['A64-悬停中停留不自动隐藏', 'A65-移出后短计时隐藏'] ====
+[09:57:40] ==== 第 2 轮存在失败项，整体重试 ====
+[09:57:40] ==== 两轮均未全绿，按失败退出 ====

@@ -6,3 +6,5 @@ frontend/package.json.md5
 e2e/fixtures/
 e2e/shots/
 e2e/run.log
+__pycache__/
+*.pyc

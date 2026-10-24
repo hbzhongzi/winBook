@@ -288,6 +288,24 @@ def type_text(s):
         sleep(5)
 
 
+def set_clipboard_text(text):
+    """把文本写入剪贴板（用于绕过 IME 粘贴）。成功返回 True。"""
+    try:
+        import win32clipboard  # type: ignore
+    except ImportError:
+        return False
+    try:
+        win32clipboard.OpenClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text, win32clipboard.CF_UNICODETEXT)
+        finally:
+            win32clipboard.CloseClipboard()
+        return True
+    except Exception:
+        return False
+
+
 def shot(name, bbox=None):
     from PIL import ImageGrab
     if bbox is None:
@@ -344,6 +362,21 @@ class App:
         sleep(500)
 
     def rect(self):
+        return window_rect(self.hwnd)
+
+    def client_size(self):
+        """客户区宽高（供按窗口尺寸推算弹窗内元素坐标，如 v0.2.8 管理对话框）。"""
+        r = RECT()
+        user32.GetClientRect(self.hwnd, ctypes.byref(r))
+        return (r.right, r.bottom)
+
+    def move_to(self, x, y):
+        """把窗口移到屏幕指定位置（避开右上角通知弹窗区，防其盖住工具栏按钮）。"""
+        r = window_rect(self.hwnd)
+        w, h = r[2] - r[0], r[3] - r[1]
+        ok = user32.SetWindowPos(self.hwnd, 0, x, y, w, h, 0x0004)  # SWP_NOZORDER
+        sleep(300)
+        log(f"move_window -> ({x},{y}) ok={bool(ok)} rect={window_rect(self.hwnd)}")
         return window_rect(self.hwnd)
 
     def dpi(self):
@@ -403,13 +436,23 @@ def probe():
 
 
 # ---------------- 场景框架 ----------------
-# 「打开图书」按钮通过像素扫描定位（品牌蓝 #2563EB），不硬编码坐标：
+# 「打开图书」按钮通过像素扫描定位（当前强调色），不硬编码坐标：
 # 环境中曾出现窗口恢复动画/半透明帧导致颜色与坐标漂移，扫描自适应。
+# 强调色可在设置中更改（v0.2.0 起持久化），驱动需识别全部 6 色，否则重启后
+# 非默认强调色会导致按钮定位失败（实测：绿色强调色重启后扫不到品牌蓝）。
 BRAND_BLUE = (37, 99, 235)
+ACCENT_COLORS = [
+    BRAND_BLUE,      # 蓝（默认）
+    (79, 70, 229),   # 靛蓝
+    (5, 150, 105),   # 绿
+    (217, 119, 6),   # 琥珀
+    (225, 29, 72),   # 玫红
+    (8, 145, 178),   # 青
+]
 
 
 def find_open_button(app):
-    """在工具栏条带中像素扫描「打开图书」按钮，返回屏幕坐标中心。"""
+    """在工具栏条带中像素扫描「打开图书」按钮（任意强调色），返回屏幕坐标中心。"""
     from PIL import ImageGrab
     r = app.rect()
     bbox = (r[0], r[1] + 32, r[0] + 500, r[1] + 100)
@@ -418,10 +461,12 @@ def find_open_button(app):
     for y in range(im.height):
         for x in range(im.width):
             p = im.getpixel((x, y))
-            if (abs(p[0] - BRAND_BLUE[0]) < 20 and abs(p[1] - BRAND_BLUE[1]) < 20
-                    and abs(p[2] - BRAND_BLUE[2]) < 20):
-                xs.append(x)
-                ys.append(y)
+            for c in ACCENT_COLORS:
+                if (abs(p[0] - c[0]) < 20 and abs(p[1] - c[1]) < 20
+                        and abs(p[2] - c[2]) < 20):
+                    xs.append(x)
+                    ys.append(y)
+                    break
     if not xs:
         return None
     return (r[0] + (min(xs) + max(xs)) // 2, r[1] + 32 + (min(ys) + max(ys)) // 2)
@@ -536,18 +581,34 @@ def open_file(app, filename, switch_filter=False, shot_prefix=None):
     e = ((edit["rect"][0] + edit["rect"][2]) // 2, (edit["rect"][1] + edit["rect"][3]) // 2)
     log(f"open_file({filename}): 点击输入框 {e}")
     click_screen(*e)
-    sleep(200)
-    type_text(os.path.join(FIX, filename))
     sleep(300)
-    log(f"open_file({filename}): 已输入路径，回车")
+    full = os.path.join(FIX, filename)
+    # 优先用 SetWindowText 直接写文件名控件：
+    # - 剪贴板粘贴会被对话框的自动补全/历史记录干扰（实测打开的是上次文件）
+    # - 逐字符 SendInput 会被搜狗输入法吞掉
+    # SetWindowText 走 Win32 消息通道，不经过 IME，最稳定。
+    buf = ctypes.create_unicode_buffer(full)
+    # SendMessageW 未声明 argtypes 时指针参数会被当成 32 位 int 溢出，需先声明
+    user32.SendMessageW.argtypes = [
+        ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_wchar_p
+    ]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    user32.SendMessageW(edit["hwnd"], 0x000C, 0, full)  # WM_SETTEXT
+    sleep(250)
+    set_clipboard_text(full)  # 供后续可能的 Ctrl+V 兜底
+    sleep(200)
+    log(f"open_file({filename}): 已设置路径，回车")
     tap(VK_RETURN)
-    ok = wait_dialog_gone()
-    if not ok:
+    if not wait_dialog_gone():
         log(f"open_file({filename}): 对话框未关闭（可能路径被拒）")
-    else:
-        sleep(300)
-        log(f"open_file({filename}): 对话框已关闭，窗口标题={window_text(app.hwnd)!r}")
-    return ok
+        return False
+    sleep(400)
+    title = window_text(app.hwnd)
+    if title != f"BookEditor — {filename}":
+        log(f"open_file({filename}): 标题不匹配（实际={title!r}）")
+        return False
+    log(f"open_file({filename}): 对话框已关闭，窗口标题={title!r}")
+    return True
 
 
 SCENARIOS = {}

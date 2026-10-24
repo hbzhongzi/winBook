@@ -22,6 +22,7 @@ type BookData struct {
 	Path       string `json:"path"`
 	Format     string `json:"format"` // epub | pdf | txt
 	Size       int64  `json:"size"`
+	ModTime    int64  `json:"modTime"`        // 修改时间（unix 秒），书架条目变更检测用
 	DataBase64 string `json:"dataBase64,omitempty"` // epub/pdf
 	Text       string `json:"text,omitempty"`       // txt
 }
@@ -58,7 +59,26 @@ func (a *App) OpenBook() (*BookData, error) {
 	if selection == "" {
 		return nil, nil
 	}
+	return openBookAt(selection)
+}
 
+// OpenBookPath 直接读取指定路径的图书（书架「继续阅读」入口，不弹对话框）。
+// 与 OpenBook 共用 openBookAt：格式判断、大小上限、错误契约完全一致。
+func (a *App) OpenBookPath(path string) (*BookData, error) {
+	if path == "" {
+		return nil, fmt.Errorf("READ_FAILED: 路径为空")
+	}
+	return openBookAt(path)
+}
+
+// SupportedExts 返回本工具支持直接打开的图书扩展名（小写，不含点）。
+// 单一真相：拖放前端校验与 openBookAt 的 switch 都以此为源，避免前后端双份漂移（v0.2.7 D55）。
+func (a *App) SupportedExts() []string {
+	return []string{"epub", "pdf", "txt"}
+}
+
+// openBookAt 读取并组装指定路径的图书数据。
+func openBookAt(selection string) (*BookData, error) {
 	// D1: 先判格式，不支持直接拒绝，不读取文件内容
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(selection), "."))
 	switch ext {
@@ -81,10 +101,11 @@ func (a *App) OpenBook() (*BookData, error) {
 	}
 
 	book := &BookData{
-		Name:   filepath.Base(selection),
-		Path:   selection,
-		Format: ext,
-		Size:   info.Size(),
+		Name:    filepath.Base(selection),
+		Path:    selection,
+		Format:  ext,
+		Size:    info.Size(),
+		ModTime: info.ModTime().Unix(),
 	}
 	switch ext {
 	case "epub", "pdf":

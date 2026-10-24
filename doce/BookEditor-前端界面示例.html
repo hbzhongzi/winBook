@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BookEditor 前端界面示例</title>
+<style>
+  :root {
+    --bg: #e9edf3;
+    --window-bg: #ffffff;
+    --titlebar-bg: #f3f5f8;
+    --border: #d8dee7;
+    --border-soft: #e5e9f0;
+    --text: #1f2937;
+    --text-2: #6b7280;
+    --text-3: #94a3b8;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --error-bg: #fef2f2;
+    --error-border: #fecaca;
+    --error-text: #b91c1c;
+    --sidebar-bg: #f8fafc;
+    --active-bg: #eff6ff;
+    --page-shadow: 0 1px 3px rgba(15, 23, 42, .12), 0 10px 28px rgba(15, 23, 42, .10);
+    --badge-epub-bg: #f3e8ff; --badge-epub-text: #7e22ce;
+    --badge-pdf-bg: #fee2e2;  --badge-pdf-text: #b91c1c;
+    --badge-txt-bg: #d1fae5;  --badge-txt-text: #047857;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: 36px 24px 56px; }
+
+  /* ===== 示例页头 ===== */
+  .demo-header h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+  .demo-header .sub { font-size: 13px; color: var(--text-2); margin: 0 0 14px; line-height: 1.7; }
+  .tech-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+  .tech-chips span {
+    font-size: 11px; color: var(--text-2); background: #fff;
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  }
+  .demo-tabs {
+    display: inline-flex; gap: 4px; background: #fff;
+    border: 1px solid var(--border); border-radius: 8px; padding: 4px; margin-bottom: 18px;
+  }
+  .demo-tabs button {
+    border: none; background: transparent; border-radius: 6px;
+    padding: 7px 16px; font-size: 13px; color: var(--text-2); cursor: pointer;
+    font-family: inherit; transition: background .15s, color .15s;
+  }
+  .demo-tabs button:hover { background: #f1f5f9; color: var(--text); }
+  .demo-tabs button.active { background: var(--accent); color: #fff; }
+
+  /* ===== 应用窗口 ===== */
+  .window {
+    position: relative;
+    background: var(--window-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, .14);
+    overflow: hidden;
+  }
+  .titlebar {
+    height: 42px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 14px; background: var(--titlebar-bg);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .titlebar .app-icon { color: var(--accent); display: flex; }
+  .titlebar .title { font-size: 13px; color: var(--text); }
+  .titlebar .mockup-tag {
+    font-size: 10px; color: var(--text-3); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; letter-spacing: .5px;
+  }
+  .window-controls { margin-left: auto; display: flex; gap: 2px; }
+  .window-controls button {
+    width: 34px; height: 28px; border: none; background: transparent;
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-2); cursor: pointer;
+  }
+  .window-controls button:hover { background: #e5e9ef; color: var(--text); }
+  .window-controls button.close:hover { background: #e81123; color: #fff; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border-soft);
+  }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 8px 15px; font-size: 13px; font-family: inherit; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-icon {
+    width: 34px; height: 34px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); background: #fff; border-radius: 8px;
+    color: var(--text-2); cursor: pointer; transition: background .15s, color .15s, border-color .15s;
+  }
+  .btn-icon:hover { background: #f1f5f9; color: var(--accent); border-color: #c7d2e4; }
+  .book-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .book-name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge { font-size: 11px; border-radius: 999px; padding: 2px 9px; font-weight: 500; }
+  .badge-epub { background: var(--badge-epub-bg); color: var(--badge-epub-text); }
+  .badge-pdf  { background: var(--badge-pdf-bg);  color: var(--badge-pdf-text); }
+  .badge-txt  { background: var(--badge-txt-bg);  color: var(--badge-txt-text); }
+  .book-size { font-size: 12px; color: var(--text-2); white-space: nowrap; }
+
+  /* ===== 错误条 ===== */
+  .errorbar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--error-bg); border-bottom: 1px solid var(--error-border);
+    color: var(--error-text); padding: 10px 14px; font-size: 13px;
+  }
+  .errorbar .err-code {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background: #fee2e2; color: var(--error-text);
+    border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+  }
+  .errorbar .err-msg { flex: 1; min-width: 0; }
+  .errorbar .err-close {
+    border: none; background: transparent; color: var(--error-text);
+    font-size: 13px; cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1;
+  }
+  .errorbar .err-close:hover { background: #fee2e2; }
+
+  /* ===== 内容区 ===== */
+  .content { height: 560px; position: relative; background: #fff; }
+  .state { display: none; height: 100%; }
+  .state.active { display: block; }
+  #state-epub.active, #state-pdf.active { display: flex; flex-direction: column; }
+
+  /* TXT */
+  .txt-scroll { height: 100%; overflow: auto; }
+  pre.txt-viewer {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 24px;
+    margin: 0;
+    font-family: "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #374151;
+  }
+
+  /* PDF */
+  .pdf-canvas-area {
+    flex: 1; overflow: auto; background: #eef1f5;
+    padding: 22px; display: flex; justify-content: center; align-items: flex-start;
+  }
+  .pdf-page {
+    background: #fff; width: 100%; max-width: 620px; min-height: 760px;
+    box-shadow: var(--page-shadow); padding: 48px 56px 56px; position: relative;
+  }
+  .pdf-h1 { font-size: 20px; font-weight: 600; margin: 0 0 20px; color: #111827; }
+  .pdf-p { font-size: 13.5px; line-height: 1.95; color: #374151; margin: 0 0 14px; text-align: justify; }
+  .pdf-figure {
+    border: 1px dashed #cbd5e1; background: #f8fafc; height: 170px;
+    display: flex; align-items: center; justify-content: center;
+    color: #94a3b8; font-size: 12px; margin: 20px 0 8px;
+  }
+  .pdf-figcaption { font-size: 12px; color: #64748b; text-align: center; margin: 0 0 20px; }
+  .pdf-footer {
+    position: absolute; bottom: 22px; left: 0; right: 0;
+    text-align: center; font-size: 12px; color: var(--text-3);
+  }
+  .pdf-controls {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-top: 1px solid var(--border-soft); background: #fafbfc;
+  }
+  .pg-btn {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    padding: 6px 14px; font-size: 13px; font-family: inherit; color: var(--text); cursor: pointer;
+  }
+  .pg-btn:hover:not(:disabled) { background: #f1f5f9; }
+  .pg-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .pg-indicator { font-size: 13px; color: var(--text-2); min-width: 72px; text-align: center; font-variant-numeric: tabular-nums; }
+  .zoom-chip { margin-left: auto; font-size: 12px; color: var(--text-2); background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+
+  /* EPUB */
+  .toc-sidebar {
+    width: 224px; flex: none; border-right: 1px solid var(--border-soft);
+    background: var(--sidebar-bg); overflow: auto; padding: 14px 0 20px;
+  }
+  .toc-title { font-size: 11px; color: var(--text-3); letter-spacing: 1px; padding: 0 16px 8px; }
+  .toc-item {
+    display: block; width: 100%; text-align: left; border: none;
+    background: transparent; padding: 8px 16px; font-size: 13px; color: #374151;
+    cursor: pointer; border-left: 3px solid transparent; font-family: inherit;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .toc-item:hover { background: #f1f5f9; }
+  .toc-item.active { background: var(--active-bg); color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+  .epub-content { flex: 1; overflow: auto; padding: 34px 44px 60px; }
+  .chapter-title { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  .chapter-sub { font-size: 12px; color: var(--text-3); margin: 0 0 26px; }
+  .chapter-p { font-size: 14px; line-height: 1.95; color: #374151; margin: 0 0 16px; text-align: justify; }
+  .chapter-cover { text-align: center; padding-top: 90px; }
+  .chapter-cover .cover-title { font-size: 34px; font-weight: 600; letter-spacing: 6px; margin: 0 0 14px; }
+  .chapter-cover .cover-author { font-size: 13px; color: var(--text-2); margin: 0 0 40px; }
+  .chapter-cover .cover-note { font-size: 12px; color: var(--text-3); }
+
+  /* 欢迎 / 错误状态 */
+  .welcome {
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 24px;
+  }
+  .welcome .welcome-icon { color: #cbd5e1; margin-bottom: 6px; }
+  .welcome .welcome-title { font-size: 15px; color: #475569; }
+  .welcome .welcome-hint { font-size: 13px; color: var(--text-2); }
+  .welcome .welcome-sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+  /* ===== 状态栏 ===== */
+  .statusbar {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 6px 14px; border-top: 1px solid var(--border-soft);
+    background: #fafbfc; font-size: 12px; color: var(--text-2);
+  }
+  .statusbar .path { font-family: Consolas, "Courier New", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ===== 示例页脚 ===== */
+  .demo-footer { font-size: 12px; color: var(--text-2); line-height: 1.9; margin: 18px 2px 0; }
+  .demo-footer li { margin-left: 18px; }
+
+  /* ============================================================
+     设置对话框（个性化设计）
+     双栏结构：左侧分类导航 + 右侧设置内容；底部操作栏。
+     ============================================================ */
+  .modal-backdrop {
+    position: absolute; inset: 0; z-index: 40;
+    background: rgba(15, 23, 42, .38);
+    display: flex; align-items: center; justify-content: center;
+    padding: 28px;
+    animation: fadeIn .16s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes popIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+  .settings-dialog {
+    width: 660px; max-width: 100%; max-height: 100%;
+    background: var(--window-bg); border-radius: 12px;
+    box-shadow: 0 24px 64px rgba(15, 23, 42, .28);
+    display: flex; flex-direction: column; overflow: hidden;
+    animation: popIn .18s ease;
+  }
+  .settings-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 20px 14px; border-bottom: 1px solid var(--border-soft);
+  }
+  .settings-head h2 { font-size: 16px; font-weight: 600; margin: 0; }
+  .settings-version {
+    font-size: 11px; color: var(--text-3); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .settings-close {
+    margin-left: auto; width: 30px; height: 30px; border: none; border-radius: 7px;
+    background: transparent; color: var(--text-2); font-size: 16px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .settings-close:hover { background: #f1f5f9; color: var(--text); }
+
+  .settings-body { display: flex; flex: 1; min-height: 0; }
+
+  /* 左栏：分类导航 */
+  .settings-nav {
+    width: 150px; flex: none; border-right: 1px solid var(--border-soft);
+    background: #fafbfc; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .settings-nav-item {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    border: none; background: transparent; border-radius: 8px;
+    padding: 9px 10px; font-size: 13px; color: var(--text-2);
+    cursor: pointer; font-family: inherit; text-align: left; transition: background .15s, color .15s;
+  }
+  .settings-nav-item svg { flex: none; }
+  .settings-nav-item:hover { background: #f1f5f9; color: var(--text); }
+  .settings-nav-item.active { background: var(--active-bg); color: var(--accent); font-weight: 500; }
+  .settings-nav-foot {
+    margin-top: auto; padding: 10px 10px 2px; font-size: 11px; color: var(--text-3); line-height: 1.6;
+  }
+
+  /* 右栏：设置内容 */
+  .settings-panes { flex: 1; min-width: 0; overflow: auto; padding: 16px 20px 20px; }
+  .settings-pane { display: none; }
+  .settings-pane.active { display: block; }
+  .pane-title { font-size: 13px; font-weight: 600; color: var(--text); margin: 0 0 12px; }
+  .pane-title:not(:first-child) { margin-top: 22px; }
+
+  .set-card {
+    border: 1px solid var(--border-soft); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 12px; background: #fff;
+  }
+  .set-card-head { display: flex; align-items: flex-start; gap: 12px; }
+  .set-card-head h3 { font-size: 13.5px; font-weight: 600; margin: 0 0 3px; display: flex; align-items: center; gap: 7px; }
+  .set-desc { font-size: 12px; color: var(--text-2); margin: 0; line-height: 1.65; }
+  .set-value-badge {
+    margin-left: auto; flex: none; font-size: 12px; font-weight: 600; color: var(--accent);
+    background: var(--active-bg); border-radius: 999px; padding: 3px 11px;
+    font-variant-numeric: tabular-nums;
+  }
+  .set-note { font-size: 11.5px; color: var(--text-3); margin: 10px 0 0; line-height: 1.6; }
+  .set-card-teased { background: #fafbfc; border-style: dashed; }
+  .set-card-teased h3, .set-card-teased .set-desc { opacity: .75; }
+  .tag-roadmap {
+    font-size: 10px; font-weight: 500; color: #b45309; background: #fef3c7;
+    border-radius: 4px; padding: 1px 6px; letter-spacing: .3px;
+  }
+
+  /* 步进器 */
+  .stepper { display: inline-flex; align-items: center; gap: 2px; margin-top: 12px; }
+  .step-btn {
+    width: 30px; height: 30px; border: 1px solid var(--border); background: #fff;
+    border-radius: 7px; font-size: 15px; line-height: 1; color: var(--text);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-family: inherit; transition: background .15s;
+  }
+  .step-btn:hover:not(:disabled) { background: #f1f5f9; }
+  .step-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .step-value {
+    min-width: 44px; text-align: center; font-size: 16px; font-weight: 600;
+    font-variant-numeric: tabular-nums; color: var(--text);
+  }
+  .step-unit { font-size: 12px; color: var(--text-2); margin-left: 2px; }
+
+  /* 快捷档位 */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    border: 1px solid var(--border); background: #fff; border-radius: 999px;
+    padding: 4px 13px; font-size: 12px; color: var(--text-2); cursor: pointer;
+    font-family: inherit; transition: all .15s;
+  }
+  .chip:hover { border-color: #c7d2e4; color: var(--text); }
+  .chip.active {
+    background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500;
+  }
+
+  /* 章节窗口预览图 */
+  .win-preview {
+    display: flex; align-items: stretch; gap: 5px; margin-top: 14px;
+    padding: 12px; background: #f8fafc; border: 1px solid var(--border-soft); border-radius: 8px;
+  }
+  .wp-block {
+    flex: 1; min-width: 0; height: 46px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; text-align: center; padding: 0 4px;
+  }
+  .wp-out { flex: .55; background: #eef1f5; color: #94a3b8; }
+  .wp-pre { background: #dbeafe; color: #1d4ed8; }
+  .wp-cur { flex: 1.5; background: var(--accent); color: #fff; font-weight: 600; }
+  .wp-group { flex: 2; min-width: 0; display: flex; flex-direction: column; gap: 4px; justify-content: center; }
+  .wp-group-label { font-size: 10px; color: var(--text-3); text-align: center; white-space: nowrap; }
+  .wp-row { display: flex; gap: 4px; }
+  .wp-row .wp-block { height: 40px; flex: 1; }
+
+  /* 开关 */
+  .switch { position: relative; display: inline-block; flex: none; margin-left: auto; }
+  .switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .switch-slider {
+    display: block; width: 38px; height: 22px; border-radius: 999px;
+    background: #cbd5e1; transition: background .18s; cursor: pointer;
+  }
+  .switch-slider::after {
+    content: ""; display: block; width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; margin: 3px 0 0 3px; transition: transform .18s;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .25);
+  }
+  .switch input:checked + .switch-slider { background: var(--accent); }
+  .switch input:checked + .switch-slider::after { transform: translateX(16px); }
+  .switch input:disabled + .switch-slider { opacity: .45; cursor: not-allowed; }
+
+  /* 主题卡片 */
+  .theme-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .theme-card {
+    border: 2px solid var(--border-soft); border-radius: 10px; padding: 8px;
+    background: #fff; cursor: pointer; font-family: inherit; text-align: left;
+    transition: border-color .15s, box-shadow .15s; position: relative;
+  }
+  .theme-card:hover { border-color: #c7d2e4; }
+  .theme-card.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--active-bg); }
+  .theme-card .check {
+    position: absolute; top: 6px; right: 6px; width: 17px; height: 17px;
+    border-radius: 50%; background: var(--accent); color: #fff;
+    display: none; align-items: center; justify-content: center; font-size: 10px;
+  }
+  .theme-card.active .check { display: flex; }
+  .theme-mini {
+    height: 52px; border-radius: 6px; border: 1px solid rgba(15,23,42,.08);
+    padding: 8px 9px; display: flex; flex-direction: column; gap: 4px; overflow: hidden;
+  }
+  .theme-mini i { display: block; height: 4px; border-radius: 2px; }
+  .theme-mini .t { width: 46%; height: 6px; }
+  .theme-mini .l1 { width: 100%; } .theme-mini .l2 { width: 82%; } .theme-mini .l3 { width: 64%; }
+  .mini-light { background: #ffffff; } .mini-light i { background: #e2e8f0; } .mini-light .t { background: #94a3b8; }
+  .mini-dark  { background: #1f2937; } .mini-dark  i { background: #4b5563; } .mini-dark  .t { background: #9ca3af; }
+  .mini-eye   { background: #e8eedd; } .mini-eye   i { background: #c3cfb0; } .mini-eye   .t { background: #8ba36b; }
+  .mini-sepia { background: #f4ecd8; } .mini-sepia i { background: #e0d2b4; } .mini-sepia .t { background: #b89b6a; }
+  .theme-name { font-size: 12px; color: var(--text); margin-top: 7px; text-align: center; }
+
+  /* 强调色色板 */
+  .swatch-row { display: flex; gap: 10px; }
+  .swatch {
+    width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; padding: 0; position: relative; transition: transform .15s;
+    box-shadow: 0 1px 3px rgba(15,23,42,.2);
+  }
+  .swatch:hover { transform: scale(1.12); }
+  .swatch.active { border-color: #fff; box-shadow: 0 0 0 2px currentColor; }
+  .swatch.active::after {
+    content: "✓"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 13px;
+  }
+
+  /* 字号滑块 */
+  .font-row { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+  .font-row input[type="range"] { flex: 1; accent-color: var(--accent); height: 4px; }
+  .font-value { font-size: 12px; color: var(--text-2); min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+  .font-preview {
+    margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border-soft);
+    border-radius: 8px; background: #fafbfc; color: #374151; line-height: 1.9;
+  }
+
+  /* 高级页 */
+  .adv-row {
+    display: flex; align-items: center; gap: 12px; padding: 11px 2px;
+    border-bottom: 1px solid var(--border-soft); font-size: 13px;
+  }
+  .adv-row:last-child { border-bottom: none; }
+  .adv-row .k { color: var(--text-2); }
+  .adv-row .v { margin-left: auto; color: var(--text); font-size: 12.5px; }
+  .btn-danger {
+    border: 1px solid var(--error-border); background: #fff; color: var(--error-text);
+    border-radius: 8px; padding: 8px 16px; font-size: 13px; font-family: inherit; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-danger:hover { background: var(--error-bg); }
+  .btn-ghost {
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    border-radius: 8px; padding: 8px 18px; font-size: 13px; font-family: inherit; cursor: pointer;
+    transition: background .15s;
+  }
+  .btn-ghost:hover { background: #f1f5f9; }
+
+  /* 底部操作栏 */
+  .settings-foot {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 20px; border-top: 1px solid var(--border-soft); background: #fafbfc;
+  }
+  .settings-hint { font-size: 11.5px; color: var(--text-3); }
+  .settings-actions { margin-left: auto; display: flex; gap: 10px; }
+
+  /* 轻提示 */
+  .toast {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 60;
+    background: rgba(17, 24, 39, .92); color: #fff; font-size: 12.5px;
+    border-radius: 999px; padding: 8px 18px; box-shadow: 0 8px 24px rgba(15,23,42,.3);
+    animation: popIn .18s ease;
+  }
+
+  /* ============================================================
+     书架（欢迎页「继续阅读」区）
+     欢迎区收起为紧凑模式，下方卡片网格：封面位 + 名称 + 格式徽标
+     + 进度 + 上次打开时间；悬停显示移除；点击整卡续读。
+     ============================================================ */
+  #state-shelf { overflow: auto; }
+  #state-shelf .welcome { height: auto; padding: 40px 24px 8px; gap: 6px; }
+  #state-shelf .welcome .welcome-icon { margin-bottom: 2px; }
+  .shelf { width: 100%; max-width: 780px; margin: 14px auto 34px; padding: 0 24px; box-sizing: border-box; text-align: left; }
+  .shelf-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .shelf-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .shelf-count { font-size: 11.5px; color: var(--text-3); }
+  .shelf-clear {
+    margin-left: auto; border: none; background: none; color: var(--text-3);
+    font-size: 12px; font-family: inherit; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  }
+  .shelf-clear:hover { color: var(--error-text); background: var(--error-bg); }
+  .shelf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .shelf-card {
+    position: relative; display: flex; gap: 10px; padding: 10px; text-align: left;
+    border: 1px solid var(--border-soft); border-radius: 10px; background: #fff;
+    font-family: inherit; cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .shelf-card:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(15, 23, 42, .08); }
+  .shelf-cover {
+    flex: none; width: 42px; height: 56px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 600; color: #fff;
+  }
+  .shelf-cover.c-epub { background: linear-gradient(135deg, #a78bfa, #6d28d9); }
+  .shelf-cover.c-pdf  { background: linear-gradient(135deg, #f87171, #b91c1c); }
+  .shelf-cover.c-txt  { background: linear-gradient(135deg, #34d399, #047857); }
+  .shelf-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  .shelf-name { font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .shelf-meta { display: flex; align-items: center; gap: 6px; }
+  .shelf-time { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+  .shelf-progress { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--text-2); }
+  .shelf-bar { flex: 1; height: 4px; border-radius: 999px; background: var(--border-soft); overflow: hidden; }
+  .shelf-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+  .shelf-remove {
+    position: absolute; top: 6px; right: 6px; width: 20px; height: 20px;
+    border: none; border-radius: 6px; background: transparent; color: var(--text-3);
+    cursor: pointer; display: none; align-items: center; justify-content: center;
+    font-size: 12px; line-height: 1; padding: 0;
+  }
+  .shelf-card:hover .shelf-remove { display: inline-flex; }
+  .shelf-remove:hover { background: var(--error-bg); color: var(--error-text); }
+  .shelf-empty { font-size: 12px; color: var(--text-3); padding: 18px 2px; }
+
+  @media (max-width: 760px) {
+    .toc-sidebar { width: 150px; }
+    .epub-content { padding: 22px 20px 48px; }
+    .pdf-page { padding: 28px 24px 44px; }
+    .content { height: 480px; }
+    .settings-dialog { width: 100%; }
+    .settings-nav { width: 118px; }
+    .theme-grid { grid-template-columns: repeat(2, 1fr); }
+    .shelf-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="demo-header">
+    <h1>BookEditor 前端界面示例</h1>
+    <p class="sub">UI 静态示例（React 实现前的视觉参考）：展示工具栏、TXT / PDF / EPUB 三种显示状态、书架（欢迎页「继续阅读」）、错误提示与设置面板的布局；书籍内容均为演示文本，不含真实文件解析逻辑。</p>
+    <div class="tech-chips">
+      <span>Wails v2</span><span>React + TypeScript</span><span>epub.js</span><span>pdf.js</span><span>WebView2</span>
+    </div>
+    <nav class="demo-tabs" aria-label="界面状态切换">
+      <button type="button" data-state="txt">TXT 显示</button>
+      <button type="button" data-state="pdf">PDF 显示</button>
+      <button type="button" data-state="epub" class="active">EPUB 显示</button>
+      <button type="button" data-state="error">错误提示</button>
+      <button type="button" data-state="shelf">书架（欢迎页）</button>
+    </nav>
+  </header>
+
+  <div class="window">
+    <!-- 标题栏 -->
+    <div class="titlebar">
+      <span class="app-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      </span>
+      <span class="title" id="windowTitle">BookEditor</span>
+      <span class="mockup-tag">MOCKUP</span>
+      <div class="window-controls">
+        <button type="button" aria-label="最小化"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <button type="button" aria-label="最大化"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="1.5"/></svg></button>
+        <button type="button" class="close" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      </div>
+    </div>
+
+    <!-- 工具栏 -->
+    <div class="toolbar">
+      <button type="button" class="btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        打开图书
+      </button>
+      <button type="button" class="btn-icon" id="shelfBtn" aria-label="书架" title="书架">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>
+      </button>
+      <button type="button" class="btn-icon" id="settingsBtn" aria-label="设置" title="设置">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <div class="book-meta">
+        <span class="book-name" id="bookName">雾中列车.epub</span>
+        <span class="badge badge-epub" id="bookBadge">EPUB</span>
+        <span class="book-size" id="bookSize">1.8 MB</span>
+      </div>
+    </div>
+
+    <!-- 错误条（错误提示状态时显示） -->
+    <div class="errorbar" id="errorBar" hidden>
+      <span class="err-code">UNSUPPORTED_FORMAT</span>
+      <span class="err-msg">暂不支持 .mobi 格式，请选择 EPUB / PDF / TXT 文件。</span>
+      <button type="button" class="err-close" id="errClose" aria-label="关闭提示">&#10005;</button>
+    </div>
+
+    <!-- 内容区 -->
+    <main class="content">
+
+      <!-- TXT -->
+      <section class="state" id="state-txt" aria-label="TXT 显示">
+        <div class="txt-scroll">
+<pre class="txt-viewer">窗台上的海
+
+一
+
+搬来这间朝北的房子，是在四月。房东留下一个粗陶的花盆，裂了道细缝，
+我本想扔掉，最后还是留下了。裂缝朝南，每天下午三点，太阳会沿着墙根
+爬上来，正好照在那一线裂痕上，像给谁别了枚金色的别针。
+
+二
+
+花盆里起初种的是薄荷，死于一次遗忘。后来改养葱，葱不怕遗忘，只怕
+惦记——越惦记，越浇水，烂得越快。我由此总结出一条并不宽广的道理：
+许多活物需要的不是关心，而是节奏。
+
+三
+
+梅雨季，窗台外那片晾衣绳上的衬衫滴水下来，在水泥护栏上敲出持续的
+声响。我误以为那是海。海当然不在此处，可声音是有越境的癖好的，
+它穿过晾衣绳、穿过生锈的护栏、穿过半扇开着的窗，落进一只裂了缝的
+粗陶花盆里。
+
+四
+
+于是窗台上便有了一片海。它不深，只到葱的白根那么深；也不蓝，
+是葱的那种绿，被雨水泡过、又被太阳晒回的绿。
+
+             ——录自旧笔记本，字迹已漫漶</pre>
+        </div>
+      </section>
+
+      <!-- PDF -->
+      <section class="state" id="state-pdf" aria-label="PDF 显示">
+        <div class="pdf-canvas-area">
+          <div class="pdf-page" id="pdfPage"><!-- JS 渲染 --></div>
+        </div>
+        <div class="pdf-controls">
+          <button type="button" class="pg-btn" id="prevPage">上一页</button>
+          <span class="pg-indicator" id="pageIndicator">1 / 3</span>
+          <button type="button" class="pg-btn" id="nextPage">下一页</button>
+          <span class="zoom-chip">缩放 120%</span>
+        </div>
+      </section>
+
+      <!-- EPUB -->
+      <section class="state active" id="state-epub" aria-label="EPUB 显示">
+        <aside class="toc-sidebar">
+          <div class="toc-title">目录</div>
+          <div id="tocList"><!-- JS 渲染 --></div>
+        </aside>
+        <div class="epub-content" id="epubContent"><!-- JS 渲染 --></div>
+      </section>
+
+      <!-- 错误提示（欢迎空态 + 错误条） -->
+      <section class="state" id="state-error" aria-label="错误提示">
+        <div class="welcome">
+          <span class="welcome-icon">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          </span>
+          <span class="welcome-title">尚未打开图书</span>
+          <span class="welcome-hint">点击工具栏「打开图书」，选择 EPUB / PDF / TXT 文件</span>
+          <span class="welcome-sub">取消文件选择时不显示任何提示</span>
+        </div>
+      </section>
+
+      <!-- 书架（欢迎页 + 继续阅读；书架为空时整区隐藏） -->
+      <section class="state" id="state-shelf" aria-label="书架">
+        <div class="welcome">
+          <span class="welcome-icon">
+            <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/></svg>
+          </span>
+          <span class="welcome-title">尚未打开图书</span>
+          <span class="welcome-hint">点击工具栏「打开图书」选择文件，或从下方书架继续阅读</span>
+          <span class="welcome-sub">取消文件选择时不显示任何提示</span>
+        </div>
+        <div class="shelf" id="shelf">
+          <div class="shelf-head">
+            <span class="shelf-title">继续阅读</span>
+            <span class="shelf-count" id="shelfCount">4 条记录</span>
+            <button type="button" class="shelf-clear" id="shelfClear">清空</button>
+          </div>
+          <div class="shelf-grid" id="shelfGrid">
+            <div class="shelf-card" role="button" tabindex="0" data-name="雾中列车.epub" data-progress="约 42%">
+              <span class="shelf-cover c-epub">雾</span>
+              <span class="shelf-body">
+                <span class="shelf-name">雾中列车.epub</span>
+                <span class="shelf-meta"><span class="badge badge-epub">EPUB</span><span class="shelf-time">昨天 21:14</span></span>
+                <span class="shelf-progress"><span class="shelf-bar"><i style="width:42%"></i></span>约 42%</span>
+              </span>
+              <span class="shelf-remove" role="button" tabindex="0" aria-label="移除雾中列车.epub的记录">&#10005;</span>
+            </div>
+            <div class="shelf-card" role="button" tabindex="0" data-name="城市地形学.pdf" data-progress="第 3 / 120 页">
+              <span class="shelf-cover c-pdf">城</span>
+              <span class="shelf-body">
+                <span class="shelf-name">城市地形学.pdf</span>
+                <span class="shelf-meta"><span class="badge badge-pdf">PDF</span><span class="shelf-time">3 天前</span></span>
+                <span class="shelf-progress"><span class="shelf-bar"><i style="width:3%"></i></span>3 / 120 页</span>
+              </span>
+              <span class="shelf-remove" role="button" tabindex="0" aria-label="移除城市地形学.pdf的记录">&#10005;</span>
+            </div>
+            <div class="shelf-card" role="button" tabindex="0" data-name="窗台上的海.txt" data-progress="61%">
+              <span class="shelf-cover c-txt">窗</span>
+              <span class="shelf-body">
+                <span class="shelf-name">窗台上的海.txt</span>
+                <span class="shelf-meta"><span class="badge badge-txt">TXT</span><span class="shelf-time">上周</span></span>
+                <span class="shelf-progress"><span class="shelf-bar"><i style="width:61%"></i></span>61%</span>
+              </span>
+              <span class="shelf-remove" role="button" tabindex="0" aria-label="移除窗台上的海.txt的记录">&#10005;</span>
+            </div>
+            <div class="shelf-card" role="button" tabindex="0" data-name="关键对话.epub" data-progress="约 8%">
+              <span class="shelf-cover c-epub">关</span>
+              <span class="shelf-body">
+                <span class="shelf-name">关键对话.epub</span>
+                <span class="shelf-meta"><span class="badge badge-epub">EPUB</span><span class="shelf-time">10 月 12 日</span></span>
+                <span class="shelf-progress"><span class="shelf-bar"><i style="width:8%"></i></span>约 8%</span>
+              </span>
+              <span class="shelf-remove" role="button" tabindex="0" aria-label="移除关键对话.epub的记录">&#10005;</span>
+            </div>
+          </div>
+          <div class="shelf-empty" id="shelfEmpty" hidden>书架为空——打开过的图书会出现在这里，可随时继续阅读。</div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 状态栏 -->
+    <footer class="statusbar">
+      <span class="path" id="statusPath">D:\Books\雾中列车.epub</span>
+      <span id="statusRight">渲染模式：scrolled-doc（纵向滚动）</span>
+    </footer>
+
+    <!-- ===== 设置对话框 ===== -->
+    <div class="modal-backdrop" id="settingsModal" hidden>
+      <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <header class="settings-head">
+          <h2 id="settingsTitle">设置</h2>
+          <span class="settings-version">BookEditor v0.1.0</span>
+          <button type="button" class="settings-close" id="settingsClose" aria-label="关闭设置">&#10005;</button>
+        </header>
+
+        <div class="settings-body">
+          <!-- 左栏：分类 -->
+          <nav class="settings-nav" aria-label="设置分类">
+            <button type="button" class="settings-nav-item active" data-pane="reading">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+              阅读体验
+            </button>
+            <button type="button" class="settings-nav-item" data-pane="appearance">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r="1.5" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.103-.297-.297-.438-.652-.438-1.097a1.688 1.688 0 0 1 1.688-1.688h1.999c3.191 0 5.8-2.609 5.8-5.8C22.262 5.761 17.716 2 12 2z"/></svg>
+              界面外观
+            </button>
+            <button type="button" class="settings-nav-item" data-pane="advanced">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/><circle cx="12" cy="12" r="4"/></svg>
+              高级
+            </button>
+            <div class="settings-nav-foot">设置保存在本机<br>不会上传任何数据</div>
+          </nav>
+
+          <!-- 右栏：内容 -->
+          <div class="settings-panes">
+
+            <!-- 阅读体验 -->
+            <section class="settings-pane active" id="pane-reading">
+              <h3 class="pane-title">阅读</h3>
+              <div class="set-card">
+                <div class="set-card-head">
+                  <div>
+                    <h3>章节预加载</h3>
+                    <p class="set-desc">当前章节前后各自预先加载的章节数量。数值越大，翻页越顺滑，但同时驻留内存的章节越多。</p>
+                  </div>
+                  <span class="set-value-badge" id="preBadge">2 章</span>
+                </div>
+                <div class="stepper">
+                  <button type="button" class="step-btn" id="preDec" aria-label="减少">&#8722;</button>
+                  <span class="step-value" id="preValue">2</span>
+                  <button type="button" class="step-btn" id="preInc" aria-label="增加">+</button>
+                  <span class="step-unit">章</span>
+                </div>
+                <div class="chip-row" id="preChips">
+                  <button type="button" class="chip" data-v="0">0 · 省内存</button>
+                  <button type="button" class="chip" data-v="1">1 · 均衡</button>
+                  <button type="button" class="chip active" data-v="2">2 · 默认</button>
+                  <button type="button" class="chip" data-v="3">3 · 顺滑</button>
+                  <button type="button" class="chip" data-v="5">5 · 极速</button>
+                </div>
+                <div class="win-preview" id="winPreview"><!-- JS 渲染 --></div>
+                <p class="set-note" id="preNote"></p>
+              </div>
+              <div class="set-card set-card-teased">
+                <div class="set-card-head">
+                  <div>
+                    <h3>阅读位置记忆 <span class="tag-roadmap">v0.2</span></h3>
+                    <p class="set-desc">自动记录每本书的阅读位置，再次打开时恢复到上次读到的章节。</p>
+                  </div>
+                  <label class="switch"><input type="checkbox" disabled><span class="switch-slider"></span></label>
+                </div>
+              </div>
+            </section>
+
+            <!-- 界面外观 -->
+            <section class="settings-pane" id="pane-appearance">
+              <h3 class="pane-title">阅读主题</h3>
+              <div class="theme-grid" id="themeGrid">
+                <button type="button" class="theme-card active" data-theme="light">
+                  <span class="check">&#10003;</span>
+                  <span class="theme-mini mini-light"><i class="t"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i></span>
+                  <span class="theme-name">浅色</span>
+                </button>
+                <button type="button" class="theme-card" data-theme="dark">
+                  <span class="check">&#10003;</span>
+                  <span class="theme-mini mini-dark"><i class="t"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i></span>
+                  <span class="theme-name">深色</span>
+                </button>
+                <button type="button" class="theme-card" data-theme="eye">
+                  <span class="check">&#10003;</span>
+                  <span class="theme-mini mini-eye"><i class="t"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i></span>
+                  <span class="theme-name">护眼</span>
+                </button>
+                <button type="button" class="theme-card" data-theme="sepia">
+                  <span class="check">&#10003;</span>
+                  <span class="theme-mini mini-sepia"><i class="t"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i></span>
+                  <span class="theme-name">羊皮纸</span>
+                </button>
+              </div>
+              <p class="set-note" style="margin-top:8px">主题对 EPUB / TXT 正文立即生效；PDF 仅影响页面外围背景。</p>
+
+              <h3 class="pane-title">强调色</h3>
+              <div class="set-card">
+                <div class="swatch-row" id="swatchRow">
+                  <button type="button" class="swatch active" data-accent="#2563eb" data-hover="#1d4ed8" style="background:#2563eb;color:#2563eb" aria-label="蓝色"></button>
+                  <button type="button" class="swatch" data-accent="#4f46e5" data-hover="#4338ca" style="background:#4f46e5;color:#4f46e5" aria-label="靛蓝"></button>
+                  <button type="button" class="swatch" data-accent="#059669" data-hover="#047857" style="background:#059669;color:#059669" aria-label="绿色"></button>
+                  <button type="button" class="swatch" data-accent="#d97706" data-hover="#b45309" style="background:#d97706;color:#d97706" aria-label="琥珀"></button>
+                  <button type="button" class="swatch" data-accent="#e11d48" data-hover="#be123c" style="background:#e11d48;color:#e11d48" aria-label="玫红"></button>
+                  <button type="button" class="swatch" data-accent="#0891b2" data-hover="#0e7490" style="background:#0891b2;color:#0891b2" aria-label="青色"></button>
+                </div>
+                <p class="set-note">强调色用于按钮、目录高亮与选中状态，切换后整个界面立即跟随。</p>
+              </div>
+
+              <h3 class="pane-title">正文字号</h3>
+              <div class="set-card">
+                <div class="font-row">
+                  <span style="font-size:12px;color:var(--text-2)">A</span>
+                  <input type="range" id="fontSize" min="13" max="20" step="1" value="14" aria-label="正文字号">
+                  <span style="font-size:16px;color:var(--text-2)">A</span>
+                  <span class="font-value" id="fontValue">14 px</span>
+                </div>
+                <div class="font-preview" id="fontPreview" style="font-size:14px">列车进站的时候，雾还没有散尽。站台像一张被哈气糊住的玻璃，所有的轮廓都在，只是边缘发软。</div>
+                <p class="set-note">对 EPUB / TXT 正文生效；PDF 使用文档自身字号，可通过缩放调整。</p>
+              </div>
+            </section>
+
+            <!-- 高级 -->
+            <section class="settings-pane" id="pane-advanced">
+              <h3 class="pane-title">通用</h3>
+              <div class="set-card">
+                <div class="adv-row"><span class="k">恢复默认设置</span><button type="button" class="btn-danger" id="resetBtn">重置</button></div>
+                <div class="adv-row"><span class="k">书架记录</span><span class="v" id="shelfRows">4 条 · 本机 localStorage</span><button type="button" class="btn-danger" id="clearShelfBtn">清空</button></div>
+                <div class="adv-row"><span class="k">版本</span><span class="v">BookEditor v0.1.0</span></div>
+                <div class="adv-row"><span class="k">设置存储</span><span class="v">本机 localStorage（bookeditor.settings.v2）</span></div>
+                <div class="adv-row"><span class="k">书架存储</span><span class="v">本机 localStorage（bookeditor.library.v1）</span></div>
+                <div class="adv-row"><span class="k">数据收集</span><span class="v">无 · 所有数据仅保存在本机</span></div>
+              </div>
+              <p class="set-note" style="margin-top:10px">「重置」会清空全部个性化选项并恢复默认值，不影响已打开的图书；「清空」删除全部书架记录与阅读位置，不影响图书文件本身。</p>
+            </section>
+          </div>
+        </div>
+
+        <footer class="settings-foot">
+          <span class="settings-hint">修改后点击「保存」生效，取消则维持原设置</span>
+          <div class="settings-actions">
+            <button type="button" class="btn-ghost" id="settingsCancel">取消</button>
+            <button type="button" class="btn-primary" id="settingsSave">保存</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- 轻提示 -->
+    <div class="toast" id="toast" hidden>设置已保存</div>
+  </div>
+
+  <div class="demo-footer">
+    <p style="margin:0 0 4px;">说明：</p>
+    <ul>
+      <li>本页为静态界面示例：顶部标签用于切换五种界面状态；PDF 支持翻页（边界页禁用按钮）；EPUB 目录可点击跳转；错误条可关闭，重新切换标签会再次出现。</li>
+      <li>「书架（欢迎页）」状态演示 v0.2.1 新功能：欢迎页下方为最近阅读卡片（封面位 / 格式徽标 / 进度条 / 上次打开时间），点击卡片续读、悬停显示移除、头部可清空；工具栏新增「书架」按钮，阅读中也可随时返回；设置 · 高级页可查看记录数并清空。书架为空时整区隐藏（对比「错误提示」状态的纯欢迎页）。设计对应《BookEditor-v0.2.1-书架与阅读位置记忆落地方案》。</li>
+      <li>点击工具栏右侧齿轮图标可打开「设置」：左侧切换「阅读体验 / 界面外观 / 高级」；章节预加载支持步进器与快捷档位，并带有章节窗口预览图与内存预估；主题、强调色、字号提供即时视觉预览。带「v0.2」标记的条目为规划中的个性化能力（其中「阅读位置记忆」已展开为《_archive/BookEditor-v0.2.1-书架与阅读位置记忆落地方案》（已归档））。</li>
+      <li>布局与行为对应《_archive/BookEditor-v0.1.0-落地说明文档》（已归档）第 4、6、7 章；TXT 排版、EPUB 滚动模式、PDF 默认缩放 120% 等口径与原文档一致。</li>
+      <li>错误码采用 "CODE: message" 前缀约定（落地说明文档 5.2）；用户取消打开时静默无提示（与原文档 6.1 一致）。</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  // ===== 各状态的元数据 =====
+  var meta = {
+    txt:   { name: "窗台上的海.txt", fmt: "TXT",  size: "42 KB",   path: "D:\\Books\\窗台上的海.txt", right: "编码：UTF-8 / GBK 自动兼容" },
+    pdf:   { name: "城市地形学.pdf", fmt: "PDF",  size: "12.4 MB", path: "D:\\Books\\城市地形学.pdf", right: "缩放：120%（默认 1.2）" },
+    epub:  { name: "雾中列车.epub",  fmt: "EPUB", size: "1.8 MB",  path: "D:\\Books\\雾中列车.epub",  right: "渲染模式：scrolled-doc（纵向滚动）" },
+    error: { name: "未打开图书",     fmt: "",     size: "",        path: "—",                       right: "就绪" },
+    shelf: { name: "未打开图书",     fmt: "",     size: "",        path: "—",                       right: "就绪" }
+  };
+
+  var windowTitle = document.getElementById("windowTitle");
+  var bookName    = document.getElementById("bookName");
+  var bookBadge   = document.getElementById("bookBadge");
+  var bookSize    = document.getElementById("bookSize");
+  var errorBar    = document.getElementById("errorBar");
+  var statusPath  = document.getElementById("statusPath");
+  var statusRight = document.getElementById("statusRight");
+
+  function setState(name) {
+    var m = meta[name];
+    document.querySelectorAll(".demo-tabs button").forEach(function (b) {
+      b.classList.toggle("active", b.dataset.state === name);
+    });
+    document.querySelectorAll(".state").forEach(function (s) {
+      s.classList.toggle("active", s.id === "state-" + name);
+    });
+    windowTitle.textContent = m.fmt ? "BookEditor — " + m.name : "BookEditor";
+    bookName.textContent = m.name;
+    if (m.fmt) {
+      bookBadge.textContent = m.fmt;
+      bookBadge.className = "badge badge-" + m.fmt.toLowerCase();
+      bookBadge.hidden = false;
+    } else {
+      bookBadge.hidden = true;
+    }
+    if (m.size) { bookSize.textContent = m.size; bookSize.hidden = false; }
+    else { bookSize.hidden = true; }
+    errorBar.hidden = (name !== "error");
+    statusPath.textContent = m.path;
+    statusRight.textContent = name === "shelf"
+      ? "就绪 · 书架 " + document.querySelectorAll("#shelfGrid .shelf-card").length + " 条记录"
+      : m.right;
+  }
+
+  document.querySelectorAll(".demo-tabs button").forEach(function (b) {
+    b.addEventListener("click", function () { setState(b.dataset.state); });
+  });
+
+  document.getElementById("errClose").addEventListener("click", function () {
+    errorBar.hidden = true;
+  });
+
+  // ===== PDF：三页演示内容 + 翻页（边界钳制） =====
+  var pages = [
+    '<h1 class="pdf-h1">第一章 城市的地平线</h1>' +
+    '<p class="pdf-p">每一座城市都有一条属于自己的地平线。它不是地理课上那条抽象的线，而是由屋顶、烟囱、广告牌与远山轮廓共同签署的一份契约。清晨五点，这份契约最先被送奶工和清洁车阅读；到了七点半，它被早高峰的人群重新签署一次。</p>' +
+    '<p class="pdf-p">本章讨论旧城区的肌理。所谓肌理，是街道在百年间反复修改、彼此妥协后留下的笔迹：主街总是直的，因为它要完成交通的使命；巷弄总是弯的，因为它要服从水沟与宅基地的古老逻辑。</p>' +
+    '<p class="pdf-p">在进入具体的测绘数据之前，有必要先建立一种缓慢的观看方式——站在任何一个十字路口的中心，依次看向四条街，你能读出这座城市四个时代的施工顺序。</p>' +
+    '<div class="pdf-footer">— 1 —</div>',
+    '<h1 class="pdf-h1">1.2 旧城区的肌理</h1>' +
+    '<div class="pdf-figure">示例插图占位</div>' +
+    '<p class="pdf-figcaption">图 1-1 主街与巷弄的走向关系</p>' +
+    '<p class="pdf-p">图 1-1 中，粗线代表主街，细线代表巷弄。注意一个反复出现的现象：每当主街遇到一座不可拆除的建筑，它便毫不犹豫地绕行——城市的道路比帝国的将军更懂得妥协。</p>' +
+    '<p class="pdf-p">巷弄的宽度遵循另一套法则。最窄的一条仅容一人侧身，当地人称其为「一线天」。这类通道在古代是防卫设施，如今成了猫的专用国道。</p>' +
+    '<div class="pdf-footer">— 2 —</div>',
+    '<h1 class="pdf-h1">1.3 山与河的去向</h1>' +
+    '<p class="pdf-p">城北那座山没有名字，地图上只标着海拔与等高线。但居民们有自己的命名传统：早市的那座、埋着钟楼的那座、看得见夕阳的那座。名称随观看角度而变，这恰恰是地形进入日常语言的方式。</p>' +
+    '<p class="pdf-p">河在城南，比山沉默。它不提供风景，只提供方向：所有迷路的人最后都会走到河边，然后顺着水流的声音找到桥，桥意味着街，街意味着城。</p>' +
+    '<div class="pdf-footer">— 3 —</div>'
+  ];
+  var pdfPage = document.getElementById("pdfPage");
+  var pageIndicator = document.getElementById("pageIndicator");
+  var prevBtn = document.getElementById("prevPage");
+  var nextBtn = document.getElementById("nextPage");
+  var current = 1;
+
+  function renderPage() {
+    pdfPage.innerHTML = pages[current - 1];
+    pageIndicator.textContent = current + " / " + pages.length;
+    prevBtn.disabled = (current <= 1);
+    nextBtn.disabled = (current >= pages.length);
+  }
+  prevBtn.addEventListener("click", function () { if (current > 1) { current--; renderPage(); } });
+  nextBtn.addEventListener("click", function () { if (current < pages.length) { current++; renderPage(); } });
+  renderPage();
+
+  // ===== EPUB：目录 + 章节内容 =====
+  var chapters = [
+    { title: "封面", html:
+      '<div class="chapter-cover">' +
+      '<p class="cover-title">雾中列车</p>' +
+      '<p class="cover-author">佚名 著</p>' +
+      '<p class="cover-note">示例文本 · 仅供界面演示</p>' +
+      '</div>' },
+    { title: "第一章 雾中列车", html:
+      '<h2 class="chapter-title">第一章 雾中列车</h2>' +
+      '<p class="chapter-sub">《雾中列车》· 示例文本</p>' +
+      '<p class="chapter-p">列车进站的时候，雾还没有散尽。站台像一张被哈气糊住的玻璃，所有的轮廓都在，只是边缘发软。</p>' +
+      '<p class="chapter-p">他把行李放上架子，坐在了车窗边。玻璃上凝着一层薄薄的水膜，外面的世界于是变成了水彩——信号灯是一团橘色的雾，铁轨是两道灰色的省略号。</p>' },
+    { title: "第二章 未寄出的信", html:
+      '<h2 class="chapter-title">第二章 未寄出的信</h2>' +
+      '<p class="chapter-sub">《雾中列车》· 示例文本</p>' +
+      '<p class="chapter-p">整理旧物时，那叠信从一本书里滑出来，像一群终于得到许可的蝴蝶。一共有十一封，都写着同一个地址，都没有贴邮票。</p>' +
+      '<p class="chapter-p">第一封写于初夏，说到阳台上的番茄；最后一封写于深秋，只写了一句：今天的雾很大，我在站台上站了很久。中间的那些，如今读来像一份缓慢的告别说明书。</p>' },
+    { title: "第三章 玻璃迷宫", html:
+      '<h2 class="chapter-title">第三章 玻璃迷宫</h2>' +
+      '<p class="chapter-sub">《雾中列车》· 示例文本</p>' +
+      '<p class="chapter-p">城市美术馆的地下室有一座玻璃迷宫。孩子们在里面跑，大人在外面看，每个人都在笑，只有迷宫中央那面镜子不笑——它只是把笑声原样退回来。</p>' +
+      '<p class="chapter-p">他在迷宫里走了二十分钟，每次以为接近出口，都会遇见另一个自己。后来他坐下来，背靠着玻璃，忽然明白：出口不是被找到的，是被放弃寻找之后，自动出现的那扇门。</p>' },
+    { title: "第四章 回声", html:
+      '<h2 class="chapter-title">第四章 回声</h2>' +
+      '<p class="chapter-sub">《雾中列车》· 示例文本</p>' +
+      '<p class="chapter-p">山谷里的回声有三秒的延迟。你喊一句话，要用三秒才能听见自己的回答，其间隔着的，刚好够你后悔一次。</p>' +
+      '<p class="chapter-p">他对着山谷喊了一个名字。三秒后，名字回来了，轻了一些，像被谁在传递途中偷偷拆开了信封。</p>' },
+    { title: "后记", html:
+      '<h2 class="chapter-title">后记</h2>' +
+      '<p class="chapter-sub">《雾中列车》· 示例文本</p>' +
+      '<p class="chapter-p">这些文字写于许多个不同的下午，彼此并不认识，却被装订在同一列车厢里。如果阅读途中你感到雾变浓了，那不是窗外的天气，是这本书正在进站。</p>' }
+  ];
+  var tocList = document.getElementById("tocList");
+  var epubContent = document.getElementById("epubContent");
+
+  function showChapter(i) {
+    chapters.forEach(function (c, idx) {
+      tocList.children[idx].classList.toggle("active", idx === i);
+    });
+    epubContent.innerHTML = chapters[i].html;
+    epubContent.scrollTop = 0;
+    if (document.getElementById("state-epub").classList.contains("active")) {
+      statusRight.textContent = "渲染模式：scrolled-doc · 当前：" + chapters[i].title;
+    }
+  }
+  chapters.forEach(function (c, i) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toc-item";
+    btn.textContent = c.title;
+    btn.addEventListener("click", function () { showChapter(i); });
+    tocList.appendChild(btn);
+  });
+  showChapter(2); // 默认展示第二章
+
+  // ============================================================
+  // 设置对话框
+  // ============================================================
+  var settingsModal = document.getElementById("settingsModal");
+  var settingsBtn   = document.getElementById("settingsBtn");
+  var settingsClose = document.getElementById("settingsClose");
+  var settingsCancel = document.getElementById("settingsCancel");
+  var settingsSave  = document.getElementById("settingsSave");
+  var toast         = document.getElementById("toast");
+  var settingsDialog = settingsModal.querySelector(".settings-dialog");
+
+  function openSettings() { settingsModal.hidden = false; }
+  function closeSettings() { settingsModal.hidden = true; }
+
+  settingsBtn.addEventListener("click", openSettings);
+  settingsClose.addEventListener("click", closeSettings);
+  settingsCancel.addEventListener("click", closeSettings);
+  // 点击遮罩空白处关闭（点到对话框本身不关）
+  settingsModal.addEventListener("click", function (ev) {
+    if (ev.target === settingsModal) closeSettings();
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && !settingsModal.hidden) closeSettings();
+  });
+
+  var toastTimer = null;
+  function showToast(msg) {
+    toast.textContent = msg || "设置已保存";
+    toast.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.hidden = true; }, 1800);
+  }
+  settingsSave.addEventListener("click", function () {
+    showToast("设置已保存");
+    closeSettings();
+  });
+
+  // ---- 左栏分类切换 ----
+  document.querySelectorAll(".settings-nav-item").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".settings-nav-item").forEach(function (b) {
+        b.classList.toggle("active", b === btn);
+      });
+      document.querySelectorAll(".settings-pane").forEach(function (p) {
+        p.classList.toggle("active", p.id === "pane-" + btn.dataset.pane);
+      });
+    });
+  });
+
+  // ---- 章节预加载：步进器 + 快捷档位 + 窗口预览 ----
+  var PRE_MIN = 0, PRE_MAX = 10;
+  var preload = 2; // 与真实应用默认值一致（settings.ts DEFAULT_SETTINGS）
+  var preValue = document.getElementById("preValue");
+  var preBadge = document.getElementById("preBadge");
+  var preDec   = document.getElementById("preDec");
+  var preInc   = document.getElementById("preInc");
+  var preNote  = document.getElementById("preNote");
+  var winPreview = document.getElementById("winPreview");
+
+  function wpBlock(cls, label) {
+    var b = document.createElement("div");
+    b.className = "wp-block " + cls;
+    if (label) b.textContent = label;
+    return b;
+  }
+
+  function renderPreview() {
+    winPreview.innerHTML = "";
+    winPreview.appendChild(wpBlock("wp-out", "窗口外"));
+
+    var group = function (dir) {
+      if (preload <= 0) return null;
+      var g = document.createElement("div");
+      g.className = "wp-group";
+      var lab = document.createElement("span");
+      lab.className = "wp-group-label";
+      lab.textContent = (dir === 1 ? "向前 " : "向后 ") + preload + " 章";
+      g.appendChild(lab);
+      var row = document.createElement("div");
+      row.className = "wp-row";
+      for (var i = 0; i < preload; i++) row.appendChild(wpBlock("wp-pre", "预加载"));
+      g.appendChild(row);
+      return g;
+    };
+    var before = group(1);
+    if (before) winPreview.appendChild(before);
+    winPreview.appendChild(wpBlock("wp-cur", "当前章节"));
+    var after = group(-1);
+    if (after) winPreview.appendChild(after);
+
+    winPreview.appendChild(wpBlock("wp-out", "窗口外"));
+  }
+
+  function renderPreload() {
+    preValue.textContent = String(preload);
+    preBadge.textContent = preload + " 章";
+    preDec.disabled = (preload <= PRE_MIN);
+    preInc.disabled = (preload >= PRE_MAX);
+    document.querySelectorAll("#preChips .chip").forEach(function (c) {
+      c.classList.toggle("active", Number(c.dataset.v) === preload);
+    });
+    renderPreview();
+    var total = preload * 2 + 1;
+    if (preload === 0) {
+      preNote.textContent = "仅驻留当前章节：内存占用最低，向后翻页时会有一次短暂加载。";
+    } else {
+      preNote.textContent = "约同时存在 " + total + " 个章节 · 预计内存占用 " + (total * 6) + " MB 左右（按每章约 6 MB 估算）。";
+    }
+  }
+
+  preDec.addEventListener("click", function () {
+    if (preload > PRE_MIN) { preload--; renderPreload(); }
+  });
+  preInc.addEventListener("click", function () {
+    if (preload < PRE_MAX) { preload++; renderPreload(); }
+  });
+  document.querySelectorAll("#preChips .chip").forEach(function (c) {
+    c.addEventListener("click", function () {
+      preload = Number(c.dataset.v);
+      renderPreload();
+    });
+  });
+  renderPreload();
+
+  // ---- 主题卡片 ----
+  document.querySelectorAll(".theme-card").forEach(function (card) {
+    card.addEventListener("click", function () {
+      document.querySelectorAll(".theme-card").forEach(function (c) {
+        c.classList.toggle("active", c === card);
+      });
+    });
+  });
+
+  // ---- 强调色：切换后对话框内预览立即跟随 ----
+  document.querySelectorAll("#swatchRow .swatch").forEach(function (sw) {
+    sw.addEventListener("click", function () {
+      document.querySelectorAll("#swatchRow .swatch").forEach(function (s) {
+        s.classList.toggle("active", s === sw);
+      });
+      settingsDialog.style.setProperty("--accent", sw.dataset.accent);
+      settingsDialog.style.setProperty("--accent-hover", sw.dataset.hover);
+      settingsDialog.style.setProperty("--active-bg", sw.dataset.accent + "1A");
+    });
+  });
+
+  // ---- 正文字号：滑块 + 实时预览 ----
+  var fontSize = document.getElementById("fontSize");
+  var fontValue = document.getElementById("fontValue");
+  var fontPreview = document.getElementById("fontPreview");
+  fontSize.addEventListener("input", function () {
+    var v = Number(fontSize.value);
+    fontValue.textContent = v + " px";
+    fontPreview.style.fontSize = v + "px";
+  });
+
+  // ---- 高级：恢复默认 ----
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    preload = 2;
+    renderPreload();
+    document.querySelectorAll(".theme-card").forEach(function (c) {
+      c.classList.toggle("active", c.dataset.theme === "light");
+    });
+    document.querySelectorAll("#swatchRow .swatch").forEach(function (s, i) {
+      s.classList.toggle("active", i === 0);
+    });
+    settingsDialog.style.removeProperty("--accent");
+    settingsDialog.style.removeProperty("--accent-hover");
+    settingsDialog.style.removeProperty("--active-bg");
+    fontSize.value = "14";
+    fontValue.textContent = "14 px";
+    fontPreview.style.fontSize = "14px";
+    showToast("已恢复默认设置");
+  });
+
+  // ---- 书架（欢迎页「继续阅读」）：点击续读 / 悬停移除 / 清空 ----
+  var shelfGrid = document.getElementById("shelfGrid");
+  var shelfEmpty = document.getElementById("shelfEmpty");
+  var shelfCount = document.getElementById("shelfCount");
+  var shelfRows = document.getElementById("shelfRows");
+
+  function refreshShelfCount() {
+    var n = shelfGrid.querySelectorAll(".shelf-card").length;
+    shelfCount.textContent = n + " 条记录";
+    shelfRows.textContent = n + " 条 · 本机 localStorage";
+    shelfEmpty.hidden = n > 0;
+    if (document.getElementById("state-shelf").classList.contains("active")) {
+      document.getElementById("statusRight").textContent = "就绪 · 书架 " + n + " 条记录";
+    }
+  }
+
+  function removeShelfCard(card) {
+    var name = card.dataset.name;
+    card.remove();
+    refreshShelfCount();
+    showToast("已移除《" + name + "》记录");
+  }
+
+  function clearShelf() {
+    shelfGrid.innerHTML = "";
+    refreshShelfCount();
+    showToast("书架记录已清空");
+  }
+
+  shelfGrid.addEventListener("click", function (ev) {
+    var card = ev.target.closest(".shelf-card");
+    if (!card) return;
+    if (ev.target.closest(".shelf-remove")) {
+      ev.stopPropagation();
+      removeShelfCard(card);
+      return;
+    }
+    showToast("打开《" + card.dataset.name + "》· 续读至 " + card.dataset.progress);
+  });
+  // 移除按钮的键盘可达性（Enter / Space）
+  shelfGrid.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var remove = ev.target.closest(".shelf-remove");
+    if (!remove) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    removeShelfCard(remove.closest(".shelf-card"));
+  });
+
+  document.getElementById("shelfClear").addEventListener("click", clearShelf);
+  document.getElementById("clearShelfBtn").addEventListener("click", function () {
+    clearShelf();
+    closeSettings();
+  });
+  // 工具栏「书架」按钮：返回欢迎页并展示书架（阅读中也可随时回书架）
+  document.getElementById("shelfBtn").addEventListener("click", function () {
+    setState("shelf");
+  });
+  refreshShelfCount();
+
+  setState("epub");
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ export namespace main {
 	    path: string;
 	    format: string;
 	    size: number;
+	    modTime: number;
 	    dataBase64?: string;
 	    text?: string;
 	
@@ -18,6 +19,7 @@ export namespace main {
 	        this.path = source["path"];
 	        this.format = source["format"];
 	        this.size = source["size"];
+	        this.modTime = source["modTime"];
 	        this.dataBase64 = source["dataBase64"];
 	        this.text = source["text"];
 	    }

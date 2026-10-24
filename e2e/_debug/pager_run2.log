@@ -1,0 +1,71 @@
+[10:03:31] ==== 第 1 轮翻页导航验证开始 ====
+[10:03:33] app pid=6408 hwnd=20972988 class=wailsWindow text='BookEditor'
+[10:03:33] virtual screen: (0,0) 1920x1080; window rect=(320, 90, 1600, 950) dpi=96
+[10:03:36] open_file(12.epub): edit=(655, 648, 738, 665) combo=(651, 643, 758, 669)
+[10:03:36] open_file(12.epub): 点击输入框 (696, 656)
+[10:03:37] open_file(12.epub): 已设置路径，回车
+[10:03:38] open_file(12.epub): 对话框已关闭，窗口标题='BookEditor — 12.epub'
+[10:03:38] pager: open_file -> True, title='BookEditor — 12.epub'
+[10:03:38] move_window -> (40,60) ok=True rect=(40, 60, 1320, 920)
+[10:03:41] shot pv-00-book.png bbox=(40, 60, 1320, 920)
+[10:03:41] click client(1184,27) -> screen(1232,118)
+[10:03:43] shot pv-01-page-mode.png bbox=(40, 60, 1320, 920)
+[10:03:46] shot pv-02-pager-hidden.png bbox=(40, 60, 1320, 920)
+[10:03:47] shot pv-03-pager-shown.png bbox=(40, 60, 1320, 920)
+[10:03:47] [PASS] A61-鼠标移动复现按钮 diff=143
+[10:03:47] pager 组(截图): x 595..684 y 773..814 → 客户区 y 742..783（窗口客户高 828，贴底余量 45px）
+[10:03:47] [PASS] A60-按钮组贴底悬浮 顶边客户区 y=742
+[10:03:51] shot pv-04-pager-hidden-again.png bbox=(40, 60, 1320, 920)
+[10:03:51] [PASS] A61-闲置自动隐藏 diff=143
+[10:03:51] [PASS] A61-隐藏态稳定（两次隐藏截图一致） diff=0
+[10:03:55] shot pv-08-hover-hold.png bbox=(40, 60, 1320, 920)
+[10:03:55] [FAIL] A64-悬停中停留不自动隐藏 diff=143
+[10:03:58] shot pv-09-hover-leave.png bbox=(40, 60, 1320, 920)
+[10:03:58] [PASS] A65-移出后闲置计时隐藏 diff=82
+[10:03:58] click client(1184,27) -> screen(1232,118)
+[10:04:00] [PASS] A62-window 级 ArrowRight 翻页（焦点在正文外） diff=33008
+[10:04:00] shot pv-05-kbd-window.png bbox=(40, 60, 1320, 920)
+[10:04:00] click client(300,300) -> screen(348,391)
+[10:04:02] [PASS] A63-iframe 内焦点 ArrowRight 仍生效 diff=34003
+[10:04:02] shot pv-06-kbd-iframe.png bbox=(40, 60, 1320, 920)
+[10:04:03] click client(660,762) -> screen(708,853)
+[10:04:04] [PASS] A61-点击翻页按钮生效 diff=33127
+[10:04:04] shot pv-07-pager-click.png bbox=(40, 60, 1320, 920)
+[10:04:04] ==== 翻页导航验证: 8/9 通过，失败: ['A64-悬停中停留不自动隐藏'] ====
+[10:04:04] ==== 第 1 轮存在失败项，整体重试 ====
+[10:04:04] ==== 第 2 轮翻页导航验证开始 ====
+[10:04:06] app pid=15044 hwnd=7210160 class=wailsWindow text='BookEditor'
+[10:04:06] virtual screen: (0,0) 1920x1080; window rect=(320, 90, 1600, 950) dpi=96
+[10:04:09] open_file(12.epub): edit=(655, 648, 738, 665) combo=(651, 643, 758, 669)
+[10:04:09] open_file(12.epub): 点击输入框 (696, 656)
+[10:04:10] open_file(12.epub): 已设置路径，回车
+[10:04:11] open_file(12.epub): 对话框已关闭，窗口标题='BookEditor — 12.epub'
+[10:04:11] pager: open_file -> True, title='BookEditor — 12.epub'
+[10:04:11] move_window -> (40,60) ok=True rect=(40, 60, 1320, 920)
+[10:04:14] shot pv-00-book.png bbox=(40, 60, 1320, 920)
+[10:04:14] click client(1184,27) -> screen(1232,118)
+[10:04:16] shot pv-01-page-mode.png bbox=(40, 60, 1320, 920)
+[10:04:19] shot pv-02-pager-hidden.png bbox=(40, 60, 1320, 920)
+[10:04:20] shot pv-03-pager-shown.png bbox=(40, 60, 1320, 920)
+[10:04:20] [PASS] A61-鼠标移动复现按钮 diff=143
+[10:04:20] pager 组(截图): x 595..684 y 773..814 → 客户区 y 742..783（窗口客户高 828，贴底余量 45px）
+[10:04:20] [PASS] A60-按钮组贴底悬浮 顶边客户区 y=742
+[10:04:24] shot pv-04-pager-hidden-again.png bbox=(40, 60, 1320, 920)
+[10:04:24] [PASS] A61-闲置自动隐藏 diff=143
+[10:04:24] [PASS] A61-隐藏态稳定（两次隐藏截图一致） diff=0
+[10:04:28] shot pv-08-hover-hold.png bbox=(40, 60, 1320, 920)
+[10:04:28] [FAIL] A64-悬停中停留不自动隐藏 diff=143
+[10:04:31] shot pv-09-hover-leave.png bbox=(40, 60, 1320, 920)
+[10:04:31] [PASS] A65-移出后闲置计时隐藏 diff=73
+[10:04:31] click client(1184,27) -> screen(1232,118)
+[10:04:33] [PASS] A62-window 级 ArrowRight 翻页（焦点在正文外） diff=33008
+[10:04:33] shot pv-05-kbd-window.png bbox=(40, 60, 1320, 920)
+[10:04:33] click client(300,300) -> screen(348,391)
+[10:04:35] [PASS] A63-iframe 内焦点 ArrowRight 仍生效 diff=34003
+[10:04:35] shot pv-06-kbd-iframe.png bbox=(40, 60, 1320, 920)
+[10:04:36] click client(660,762) -> screen(708,853)
+[10:04:37] [PASS] A61-点击翻页按钮生效 diff=33127
+[10:04:37] shot pv-07-pager-click.png bbox=(40, 60, 1320, 920)
+[10:04:37] ==== 翻页导航验证: 8/9 通过，失败: ['A64-悬停中停留不自动隐藏'] ====
+[10:04:37] ==== 第 2 轮存在失败项，整体重试 ====
+[10:04:37] ==== 两轮均未全绿，按失败退出 ====

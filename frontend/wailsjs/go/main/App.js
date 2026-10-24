@@ -5,3 +5,11 @@
 export function OpenBook() {
   return window['go']['main']['App']['OpenBook']();
 }
+
+export function OpenBookPath(arg1) {
+  return window['go']['main']['App']['OpenBookPath'](arg1);
+}
+
+export function SupportedExts() {
+  return window['go']['main']['App']['SupportedExts']();
+}

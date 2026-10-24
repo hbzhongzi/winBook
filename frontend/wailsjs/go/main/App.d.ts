@@ -3,3 +3,7 @@
 import {main} from '../models';
 
 export function OpenBook():Promise<main.BookData>;
+
+export function OpenBookPath(arg1:string):Promise<main.BookData>;
+
+export function SupportedExts():Promise<Array<string>>;
