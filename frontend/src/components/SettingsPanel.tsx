@@ -19,6 +19,13 @@ import {
   type ThemeName,
 } from "../utils/settings";
 import {
+  FIT_LABELS,
+  PDF_FITS,
+  PDF_ZOOM_MAX,
+  PDF_ZOOM_MIN,
+  PDF_ZOOM_STEP,
+} from "../utils/pdfScale";
+import {
   DEFAULT_HOTKEYS,
   HOTKEY_ACTIONS,
   HOTKEY_ACTION_LABELS,
@@ -371,6 +378,69 @@ export default function SettingsPanel({ settings, onOpenManager, onChange, onClo
                     </button>
                   </div>
                   <p className="set-note">修改后点击「保存」生效；也可在阅读中直接通过工具栏切换，立即生效。</p>
+                </div>
+                {/* ===== v0.2.9：PDF 适配三件套（与阅读器四处入口写同一状态）===== */}
+                <div className="set-card">
+                  <div className="set-card-head">
+                    <div>
+                      <h3>
+                        PDF 适配方式 <span className="tag-roadmap">v0.2.9</span>
+                      </h3>
+                      <p className="set-desc">
+                        默认「自适应」：按容器与页面宽高比，自动取适宽 / 适高中倍率更大者。适宽字号最大但需页内纵向滚动；适高 / 双页整页可见，适合看图与版式。
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mode-seg mode-seg-block" role="group" aria-label="PDF 适配方式">
+                    {PDF_FITS.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        className={"mode-opt" + (draft.pdfFit === f ? " active" : "")}
+                        onClick={() => patch({ pdfFit: f })}
+                        aria-pressed={draft.pdfFit === f}
+                      >
+                        {FIT_LABELS[f]}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={"set-card-row" + (draft.pdfFit !== "custom" ? " row-off" : "")}>
+                    <span className="set-row-label">
+                      自定义倍率
+                      <span className="set-sub">50%–400%，仅「自定义」时生效；从其它方式切过来时继承当前倍率</span>
+                    </span>
+                    <span className="zoom-set">
+                      <input
+                        type="range"
+                        className="zoom-range"
+                        min={PDF_ZOOM_MIN}
+                        max={PDF_ZOOM_MAX}
+                        step={PDF_ZOOM_STEP}
+                        value={draft.pdfZoom}
+                        disabled={draft.pdfFit !== "custom"}
+                        onChange={(e) => patch({ pdfFit: "custom", pdfZoom: Number(e.target.value) })}
+                        aria-label="PDF 自定义倍率"
+                      />
+                      <span className="zoom-num">{draft.pdfZoom}%</span>
+                    </span>
+                  </div>
+                  <div className="set-card-row">
+                    <span className="set-row-label">
+                      高清渲染
+                      <span className="set-sub">按显示器 DPI 渲染位图（devicePixelRatio，上限 2）；关闭后按 CSS 像素渲染，放大时边缘发虚、更省内存</span>
+                    </span>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={draft.pdfDpr}
+                        onChange={(e) => patch({ pdfDpr: e.target.checked })}
+                      />
+                      <span className="switch-slider" />
+                    </label>
+                  </div>
+                  <p className="set-note">
+                    四个入口写同一状态并持久化：控制条 chip 档位菜单、工具栏「－ ＋」、阅读区 Ctrl+滚轮、本面板。修改后点击「保存」生效。
+                  </p>
                 </div>
                 <div className="set-card set-card-teased">
                   <div className="set-card-head">

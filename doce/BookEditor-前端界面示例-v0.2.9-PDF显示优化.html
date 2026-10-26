@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BookEditor 前端界面示例 · v0.2.9 PDF 显示优化</title>
+<style>
+  :root {
+    --bg: #e9edf3;
+    --window-bg: #ffffff;
+    --titlebar-bg: #f3f5f8;
+    --border: #d8dee7;
+    --border-soft: #e5e9f0;
+    --text: #1f2937;
+    --text-2: #6b7280;
+    --text-3: #94a3b8;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --active-bg: #eff6ff;
+    --error-bg: #fef2f2;
+    --error-border: #fecaca;
+    --error-text: #b91c1c;
+    --ok-bg: #ecfdf5;
+    --ok-border: #a7f3d0;
+    --ok-text: #047857;
+    --badge-pdf-bg: #fee2e2;  --badge-pdf-text: #b91c1c;
+    --stage-bg: #dfe4ec;
+    --page-shadow: 0 2px 14px rgba(15, 23, 42, .18);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1320px; margin: 0 auto; padding: 34px 20px 56px; }
+
+  /* ===== 示例页头 ===== */
+  .demo-header h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+  .demo-header .sub { font-size: 13px; color: var(--text-2); margin: 0 0 14px; line-height: 1.75; }
+  .tech-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .tech-chips span {
+    font-size: 11px; color: var(--text-2); background: #fff;
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  }
+  .tech-chips span.hl { color: var(--accent); border-color: #bfdbfe; background: var(--active-bg); }
+
+  .window {
+    position: relative; background: var(--window-bg);
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, .14);
+    overflow: hidden; width: fit-content; max-width: 100%;
+  }
+  .titlebar {
+    height: 42px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 14px; background: var(--titlebar-bg);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .titlebar .app-icon { color: var(--accent); display: flex; }
+  .titlebar .title { font-size: 13px; }
+  .titlebar .mockup-tag {
+    font-size: 10px; color: var(--text-3); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; letter-spacing: .5px;
+  }
+  .window-controls { margin-left: auto; display: flex; gap: 2px; }
+  .window-controls button {
+    width: 34px; height: 28px; border: none; background: transparent;
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-2); cursor: pointer;
+  }
+  .window-controls button.close:hover { background: #e81123; color: #fff; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--border-soft);
+  }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 8px 15px; font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-icon {
+    width: 34px; height: 34px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); background: #fff; border-radius: 8px;
+    color: var(--text-2); cursor: pointer;
+  }
+  .btn-icon:hover { background: #f1f5f9; color: var(--accent); }
+  .book-meta { margin-left: auto; font-size: 12px; color: var(--text-3); }
+
+  .mode-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .mode-opt {
+    border: none; background: #fff; color: var(--text-2); font-family: inherit;
+    font-size: 12px; padding: 7px 13px; cursor: pointer;
+  }
+  .mode-opt + .mode-opt { border-left: 1px solid var(--border); }
+  .mode-opt.active { background: var(--accent); color: #fff; }
+
+  /* 缩放快捷组（工具栏右侧，v0.2.9 新增） */
+  .zoom-seg {
+    display: inline-flex; align-items: center; border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; background: #fff;
+  }
+  .zoom-seg button {
+    border: none; background: #fff; color: var(--text-2); font-family: inherit;
+    width: 30px; height: 32px; font-size: 15px; cursor: pointer; line-height: 1;
+  }
+  .zoom-seg button:hover { background: #f1f5f9; color: var(--accent); }
+  .zoom-seg .zv {
+    min-width: 56px; text-align: center; font-size: 12px; color: var(--text);
+    border-left: 1px solid var(--border-soft); border-right: 1px solid var(--border-soft);
+    height: 32px; display: inline-flex; align-items: center; justify-content: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== PDF 舞台（v0.2.9：宽度/高度由 JS 按适配结果写入） ===== */
+  .pdf-stage {
+    position: relative; background: var(--stage-bg); overflow: auto;
+    display: flex; padding: 22px;
+  }
+  .pdf-stage.center { align-items: center; }
+  .pdf-stage.top { align-items: flex-start; }
+  .pdf-fit { display: flex; gap: 14px; margin: 0 auto; flex: none; }
+  .pdf-slot { position: relative; overflow: hidden; flex: none; }
+  .pdf-slot .pdf-page { position: absolute; top: 0; left: 0; transform-origin: top left; }
+
+  /* 纸张：设计尺寸 595×842（A4 @72dpi = CSS px），内部字号按"纸面"写，
+     由 transform: scale(k) 统一缩放，故三种适配形态的字号比例是真实的 */
+  .pdf-page {
+    width: 595px; height: 842px; background: #fff; color: #1f2937;
+    box-shadow: var(--page-shadow); padding: 58px 64px 54px; flex: none;
+    font-family: "Microsoft YaHei", "SimSun", serif; line-height: 1;
+  }
+  .pp-title { font-size: 15px; font-weight: 600; text-align: center; letter-spacing: 2px; margin-bottom: 20px; }
+  .pp-p { font-size: 10.5px; line-height: 1.95; text-indent: 2em; margin: 0 0 10px; text-align: justify; }
+  .pp-h2 { font-size: 12px; font-weight: 600; text-align: center; letter-spacing: 1px; margin: 22px 0 12px; }
+  .pp-cip { font-size: 9.5px; line-height: 1.85; color: #374151; margin: 0 0 3px; }
+  .pp-cip.t { font-weight: 600; text-align: center; letter-spacing: 1px; margin-bottom: 8px; color: #111827; }
+  .pp-foot { position: absolute; left: 64px; right: 64px; bottom: 26px; font-size: 9px; color: #9ca3af; display: flex; justify-content: space-between; }
+  .pdf-blur .pdf-page { filter: blur(.5px); }   /* 模拟关闭 DPR 后的位图放大发虚 */
+
+  /* PDF 控制条 */
+  .pdf-controls {
+    flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; border-top: 1px solid var(--border-soft); background: #fafbfc;
+  }
+  .pg-btn {
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    border-radius: 6px; padding: 6px 13px; font-size: 12.5px; font-family: inherit; cursor: pointer;
+  }
+  .pg-btn:hover:not(:disabled) { background: #f1f5f9; }
+  .pg-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .pg-jump {
+    font-size: 12.5px; color: var(--text-2); cursor: pointer; border-radius: 6px;
+    padding: 4px 9px; font-variant-numeric: tabular-nums; user-select: none;
+  }
+  .pg-jump:hover { background: #eef2f7; color: var(--text); }
+  .pg-jump input {
+    width: 44px; border: 1px solid var(--accent); border-radius: 5px;
+    padding: 3px 6px; font-size: 12.5px; font-family: inherit; outline: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .zoom-chip-btn {
+    margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); background: #fff; border-radius: 999px;
+    padding: 4px 11px; font-size: 12px; color: var(--text); cursor: pointer; font-family: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+  .zoom-chip-btn:hover { border-color: #bfdbfe; color: var(--accent); background: var(--active-bg); }
+  .zoom-chip-btn .cv { color: var(--text-3); font-size: 11px; }
+
+  .statusbar {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 6px 14px; border-top: 1px solid var(--border-soft);
+    background: #fafbfc; font-size: 12px; color: var(--text-2);
+  }
+  .statusbar .path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; }
+
+  /* ===== 通用下拉菜单（复用 v0.2.8 口径） ===== */
+  .cat-menu {
+    position: absolute; z-index: 30; min-width: 150px;
+    background: #fff; border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .18); padding: 5px;
+    animation: popIn .14s ease;
+  }
+  @keyframes popIn { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .menu-title { font-size: 10.5px; color: var(--text-3); padding: 5px 8px 4px; }
+  .menu-item {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    border: none; background: transparent; border-radius: 6px;
+    padding: 6px 8px; font-size: 12px; color: var(--text); cursor: pointer;
+    text-align: left; font-family: inherit;
+  }
+  .menu-item:hover { background: #f1f5f9; }
+  .menu-item .ck { visibility: hidden; color: var(--accent); font-size: 11px; margin-left: auto; }
+  .menu-item.current .ck { visibility: visible; }
+  .menu-item .dim { color: var(--text-3); font-size: 11px; }
+  .menu-sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
+  .menu-presets { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px 6px; }
+  .menu-presets button {
+    border: 1px solid var(--border); background: #fff; border-radius: 6px;
+    font-size: 11px; color: var(--text-2); padding: 3px 8px; cursor: pointer; font-family: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+  .menu-presets button:hover { border-color: #bfdbfe; color: var(--accent); background: var(--active-bg); }
+  .menu-note { font-size: 10.5px; color: var(--text-3); padding: 4px 8px 5px; line-height: 1.6; }
+
+  /* ===== 形态对比条 ===== */
+  .block-title { font-size: 14px; font-weight: 600; margin: 26px 0 4px; }
+  .block-sub { font-size: 12px; color: var(--text-2); margin: 0 0 12px; line-height: 1.7; }
+  .compare { display: flex; gap: 14px; flex-wrap: wrap; }
+  .compare-card {
+    flex: none; background: #fff; border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .cc-head { font-size: 12.5px; font-weight: 600; padding: 9px 13px; border-bottom: 1px solid var(--border-soft); }
+  .cc-head.bad { color: var(--error-text); background: var(--error-bg); }
+  .cc-head.good { color: var(--ok-text); background: var(--ok-bg); }
+  .cc-frame {
+    position: relative; background: var(--stage-bg); overflow: hidden;
+    display: flex; justify-content: center; width: 618px; max-width: 100%; padding: 0;
+  }
+  .cc-frame .pdf-page { box-shadow: 0 1px 8px rgba(15,23,42,.22); }
+  .cc-foot { font-size: 11.5px; color: var(--text-2); padding: 9px 13px; line-height: 1.75; border-top: 1px solid var(--border-soft); }
+  .cc-foot b.bad { color: var(--error-text); }
+  .cc-foot b.good { color: var(--ok-text); }
+  .anno { position: absolute; border: 1px dashed; border-radius: 3px; font-size: 10px; pointer-events: none; }
+  .anno.bad { border-color: #ef4444; color: #b91c1c; background: rgba(239,68,68,.07); }
+  .anno.good { border-color: #10b981; color: #047857; background: rgba(16,185,129,.08); }
+  .anno span { position: absolute; white-space: nowrap; }
+
+  /* ===== 调试读数条 ===== */
+  .readout {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: #fff; border: 1px solid var(--border); border-radius: 9px;
+    padding: 10px 13px; font-size: 12px; color: var(--text-2); margin-bottom: 14px;
+  }
+  .readout b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .readout .k { color: var(--text-3); }
+  .readout .sep { width: 1px; height: 16px; background: var(--border); }
+  .readout .ctl { display: inline-flex; align-items: center; gap: 8px; }
+  .readout input[type="range"] { width: 150px; accent-color: var(--accent); }
+  .readout select {
+    border: 1px solid var(--border); border-radius: 6px; background: #fff;
+    font-size: 12px; font-family: inherit; padding: 4px 7px; color: var(--text);
+  }
+
+  /* ===== 设置面板 mockup ===== */
+  .set-window { width: 100%; max-width: 100%; }
+  .set-body { display: flex; min-height: 380px; }
+  .set-nav {
+    flex: none; width: 132px; border-right: 1px solid var(--border-soft);
+    padding: 12px 8px; background: #fafbfc; display: flex; flex-direction: column; gap: 2px;
+  }
+  .set-nav-item {
+    border: none; background: transparent; text-align: left; font-family: inherit;
+    font-size: 12.5px; color: var(--text-2); border-radius: 7px; padding: 8px 10px; cursor: pointer;
+  }
+  .set-nav-item:hover { background: #eef2f7; color: var(--text); }
+  .set-nav-item.active { background: var(--active-bg); color: var(--accent); font-weight: 500; }
+  .set-pane { flex: 1; padding: 18px 22px; min-width: 0; }
+  .set-pane h3 { font-size: 14px; margin: 0 0 4px; }
+  .set-pane .pane-desc { font-size: 12px; color: var(--text-3); margin: 0 0 16px; }
+  .set-row {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 13px 0; border-top: 1px solid var(--border-soft);
+  }
+  .set-label { font-size: 12.5px; min-width: 220px; }
+  .set-label .set-sub { display: block; font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.6; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+  .seg-opt {
+    border: none; background: #fff; color: var(--text-2); font-family: inherit;
+    font-size: 12px; padding: 7px 13px; cursor: pointer;
+  }
+  .seg-opt + .seg-opt { border-left: 1px solid var(--border); }
+  .seg-opt:hover { background: #f1f5f9; }
+  .seg-opt.active { background: var(--accent); color: #fff; }
+  .zoom-set { display: inline-flex; align-items: center; gap: 10px; }
+  .zoom-set input[type="range"] { width: 190px; accent-color: var(--accent); }
+  .zoom-set input[type="range"]:disabled { accent-color: var(--text-3); cursor: not-allowed; }
+  .zoom-num { font-size: 12.5px; color: var(--text); min-width: 46px; font-variant-numeric: tabular-nums; }
+  .row-off { opacity: .45; }
+  .switch {
+    width: 42px; height: 24px; border-radius: 999px; border: 1px solid var(--border);
+    background: #e5e9f0; position: relative; cursor: pointer; flex: none; padding: 0;
+  }
+  .switch i {
+    position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.25); transition: left .15s;
+  }
+  .switch.on { background: var(--accent); border-color: var(--accent); }
+  .switch.on i { left: 21px; }
+  .set-note {
+    font-size: 11.5px; color: var(--text-2); line-height: 1.85; margin: 14px 0 0;
+    background: #f8fafc; border: 1px solid var(--border-soft); border-radius: 8px; padding: 10px 12px;
+  }
+  .pane-placeholder {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--text-3); font-size: 12.5px; padding: 40px;
+  }
+
+  .toast {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 60;
+    background: rgba(17, 24, 39, .92); color: #fff; font-size: 12.5px;
+    border-radius: 999px; padding: 8px 18px; box-shadow: 0 8px 24px rgba(15,23,42,.3);
+    animation: popIn .18s ease;
+  }
+  .demo-footer { font-size: 12px; color: var(--text-2); line-height: 1.95; margin: 18px 2px 0; }
+  .demo-footer li { margin-left: 18px; }
+  .demo-footer code { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="demo-header">
+    <h1>BookEditor 前端界面示例 · v0.2.9 PDF 显示优化</h1>
+    <p class="sub">UI 静态示例（React 实现前的视觉参考）：解决 PDF 在宽窗口下「正文窄条居中、左右大量空白、页面底部被裁、字小且不可调」。核心是把写死的 <code>SCALE = 1.2</code> 改为<b>五态适配（自适应 / 适宽 / 适高 / 双页 / 自定义）</b>，默认「自适应」；缩放改为可调（工具栏 ±、档位菜单、Ctrl+滚轮、设置持久化）；canvas 按显示器 DPI 渲染。本页全部可交互，行为口径即《BookEditor-v0.2.9-PDF显示优化开发方案》口径。</p>
+    <div class="tech-chips">
+      <span class="hl">自适应适配</span><span class="hl">适宽</span><span class="hl">适高</span><span class="hl">双页并排</span>
+      <span class="hl">自定义倍率</span><span>Ctrl+滚轮</span><span>高清渲染 DPR</span><span>页码跳转</span><span>设置持久化</span>
+    </div>
+  </header>
+
+  <!-- ===== ① 形态对比（½ 比例预览，标注为真实像素） ===== -->
+  <div class="block-title">① 适配形态对比（½ 比例预览）</div>
+  <p class="block-sub">同一本书（A4 竖版 595×842）、同一个内容区内盒（1236×679，即默认 1280×860 窗口扣除四周 22px padding 后）下的两种呈现。左为现状：写死 1.2 → 渲染 714×1010，<b>左右各空 261px、底部裁 331px</b>；右为 v0.2.9 默认「自适应」→ 判为适宽 2.08 → 渲染 1236×1749，<b>宽度铺满、字号 ≈22px</b>（页内纵向滚动约 2.6 屏读完一页）。</p>
+  <div class="compare">
+    <div class="compare-card">
+      <div class="cc-head bad">现状 · 写死 1.2（v0.2.8 及以前）</div>
+      <div class="cc-frame" id="ccBefore" style="height:340px;"></div>
+      <div class="cc-foot">渲染 <b>714 × 1010</b> px ｜ 内容区内盒 <b>1236 × 679</b> px<br>字号 ≈12.6px ｜ <b class="bad">左右各 ≈261px 空白 + 底部 331px 被裁</b></div>
+    </div>
+    <div class="compare-card">
+      <div class="cc-head good">优化 · 自适应 → 适宽 2.08（v0.2.9 默认）</div>
+      <div class="cc-frame" id="ccAfter" style="height:340px;"></div>
+      <div class="cc-foot">渲染 <b>1236 × 1749</b> px ｜ 内容区内盒 <b>1236 × 679</b> px<br>字号 ≈22px ｜ <b class="good">宽度铺满无空白，页内滚动约 2.6 屏读完一页</b></div>
+    </div>
+  </div>
+
+  <!-- ===== ② 主窗口 mockup ===== -->
+  <div class="block-title">② 阅读界面（可交互）</div>
+  <p class="block-sub">拖动「内容区宽度」可观察<b>自适应的翻转判定</b>：竖版书在宽内容区下恒为适宽；把宽度拖窄越过翻转点后自动转为适高（整页可见）。切换「横版幻灯片」可在更窄处看到同一条判定生效。缩放 chip 可点开档位菜单，Ctrl+滚轮可直接在纸面上调倍率。</p>
+
+  <div class="readout">
+    <span class="ctl">
+      <span class="k">内容区宽度</span>
+      <input type="range" id="ctlW" min="300" max="1280" step="4" value="1280">
+      <b id="ctlWv">1280px</b>
+    </span>
+    <span class="sep"></span>
+    <span class="ctl">
+      <span class="k">页面</span>
+      <select id="ctlOrient">
+        <option value="portrait">A4 竖版 595×842</option>
+        <option value="landscape">16:9 横版 960×540</option>
+      </select>
+    </span>
+    <span class="sep"></span>
+    <span class="k">适宽</span><b id="roSw">200%</b>
+    <span class="k">适高</span><b id="roSh">81%</b>
+    <span class="k">双页</span><b id="roSp">81%</b>
+    <span class="sep"></span>
+    <span class="k">自适应判定 →</span><b id="roAuto">适宽</b>
+    <span class="sep"></span>
+    <span class="k">位图</span><b id="roBmp">—</b>
+    <span class="k">显示</span><b id="roDisp">—</b>
+  </div>
+
+  <div class="window" id="appWindow">
+    <div class="titlebar">
+      <span class="app-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      </span>
+      <span class="title">微信小程序运营与推广完全自学手册（王洪波，王袆）</span>
+      <span class="mockup-tag">MOCKUP v0.2.9</span>
+      <div class="window-controls">
+        <button type="button" aria-label="最小化"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+        <button type="button" class="close" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button type="button" class="btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        打开图书
+      </button>
+      <div class="mode-seg" role="group" aria-label="阅读模式">
+        <button type="button" class="mode-opt" id="modeScroll">滚动</button>
+        <button type="button" class="mode-opt active" id="modePage">翻页</button>
+      </div>
+      <div class="zoom-seg" role="group" aria-label="缩放">
+        <button type="button" id="zoomOut" title="缩小（Ctrl+−）">&#8722;</button>
+        <span class="zv" id="zoomVal">200%</span>
+        <button type="button" id="zoomIn" title="放大（Ctrl++）">&#43;</button>
+      </div>
+      <span class="book-meta">PDF · 43.6 MB · 262 页</span>
+    </div>
+
+    <div class="pdf-stage top" id="pdfStage">
+      <div class="pdf-fit" id="pdfFit"></div>
+    </div>
+
+    <div class="pdf-controls">
+      <button type="button" class="pg-btn" id="pgPrev">上一页</button>
+      <span class="pg-jump" id="pgJump" title="点击输入页码跳转">4 / 262</span>
+      <button type="button" class="pg-btn" id="pgNext">下一页</button>
+      <button type="button" class="zoom-chip-btn" id="zoomChip">
+        <span id="zoomChipText">适宽 200%</span><span class="cv">&#9662;</span>
+      </button>
+    </div>
+
+    <footer class="statusbar">
+      <span class="path">C:\Users\Administrator\Documents\wxchat_files\…\微信小程序运营与推广完全自学手册.pdf</span>
+      <span id="statusRight">单页翻页 · 适宽 200% · 高清渲染开</span>
+    </footer>
+
+    <div class="toast" id="toast" hidden></div>
+  </div>
+
+  <!-- ===== ③ 设置面板 mockup ===== -->
+  <div class="block-title">③ 设置面板 · 阅读体验（新增 PDF 区，与上方双向同步）</div>
+  <p class="block-sub">适配方式、自定义倍率、高清渲染三个新设置项落在「阅读体验」窗格；写入 <code>bookeditor.settings.v4</code>（存储键不变、version 不变，旧配置经 normalize 回落默认值，向后兼容）。位置记录仍是 <code>{kind:"pdf", page, pageCount, mode}</code>，书架进度跨版本无损。</p>
+
+  <div class="window set-window">
+    <div class="titlebar">
+      <span class="app-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.08a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.08a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.08a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </span>
+      <span class="title">设置</span>
+      <div class="window-controls">
+        <button type="button" class="close" aria-label="关闭"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></button>
+      </div>
+    </div>
+    <div class="set-body">
+      <nav class="set-nav">
+        <button type="button" class="set-nav-item" data-pane="general">通用</button>
+        <button type="button" class="set-nav-item active" data-pane="reading">阅读体验</button>
+        <button type="button" class="set-nav-item" data-pane="appearance">界面外观</button>
+        <button type="button" class="set-nav-item" data-pane="advanced">高级</button>
+      </nav>
+
+      <div class="set-pane" id="pane-reading">
+        <h3>阅读体验</h3>
+        <p class="pane-desc">影响 EPUB / TXT / PDF 的阅读呈现；PDF 相关为 v0.2.9 新增。</p>
+
+        <div class="set-row">
+          <div class="set-label">阅读模式<span class="set-sub">滚动 = 纵向连续；翻页 = 单页（PDF 双页模式下翻页步进 2 页）</span></div>
+          <div class="seg" id="segMode">
+            <button type="button" class="seg-opt" data-v="scroll">滚动</button>
+            <button type="button" class="seg-opt active" data-v="page">翻页</button>
+          </div>
+        </div>
+
+        <div class="set-row">
+          <div class="set-label">PDF 适配方式<span class="set-sub">默认「自适应」：按容器与页面宽高比，自动取适宽 / 适高中倍率更大者</span></div>
+          <div class="seg" id="segFit">
+            <button type="button" class="seg-opt active" data-v="auto">自适应</button>
+            <button type="button" class="seg-opt" data-v="width">适宽</button>
+            <button type="button" class="seg-opt" data-v="height">适高</button>
+            <button type="button" class="seg-opt" data-v="spread">双页</button>
+            <button type="button" class="seg-opt" data-v="custom">自定义</button>
+          </div>
+        </div>
+
+        <div class="set-row" id="rowZoom">
+          <div class="set-label">自定义倍率<span class="set-sub">50%–400%，仅「自定义」时生效；从其它方式切过来时继承当前倍率</span></div>
+          <div class="zoom-set">
+            <input type="range" id="zoomRange" min="50" max="400" step="5" value="100" disabled>
+            <span class="zoom-num" id="zoomNum">100%</span>
+          </div>
+        </div>
+
+        <div class="set-row">
+          <div class="set-label">高清渲染<span class="set-sub">按显示器 DPI 渲染位图（devicePixelRatio，上限 2）；关闭后按 CSS 像素渲染，放大时边缘发虚、更省内存</span></div>
+          <button type="button" class="switch on" id="swDpr" role="switch" aria-checked="true" aria-label="高清渲染"><i></i></button>
+        </div>
+
+        <p class="set-note">口径说明：竖版书在横向窗口下「自适应」恒判为适宽（字号最大、无左右空白）；横版幻灯片在矮窗口下转为适高（整页可见、不横向溢出）。要「一眼看完整页」请手动切「适高」或「双页」——纸面比例与宽窗的固有矛盾已记为偏差 D66。</p>
+      </div>
+
+      <div class="pane-placeholder" id="pane-general" hidden>通用窗格（示例仅展示阅读体验）</div>
+      <div class="pane-placeholder" id="pane-appearance" hidden>界面外观窗格（示例仅展示阅读体验）</div>
+      <div class="pane-placeholder" id="pane-advanced" hidden>高级窗格（示例仅展示阅读体验）</div>
+    </div>
+  </div>
+
+  <div class="demo-footer">
+    <p style="margin:0 0 4px;">交互说明（口径与《BookEditor-v0.2.9-PDF显示优化开发方案》一致）：</p>
+    <ul>
+      <li><b>缩放入口（四处）</b>：工具栏 <code>－ 200% ＋</code>、控制条 chip 点开档位菜单、阅读区 <code>Ctrl+滚轮</code>、设置面板倍率滑杆。四处写同一状态，任何一处改动全局同步并持久化。</li>
+      <li><b>档位菜单</b>：上部为五种适配方式（当前项打勾，附该方式在此内容区下的实际倍率）；下部为倍率预设 50/75/100/125/150/200/300%；选预设自动切到「自定义」。</li>
+      <li><b>页码跳转</b>：点 <code>4 / 262</code> 变为输入框，回车直达（越界钳制到 1–262）。</li>
+      <li><b>双页模式</b>：两页并排、间距 14px，翻页步进 2 页；恢复页码为偶数时左页取该页，为奇数时左页取该页（右页为空则只显示一页）。</li>
+      <li><b>高清渲染</b>：开启时 canvas 位图 = 显示尺寸 × DPR（上限 2），CSS 尺寸不变；本示例用轻微模糊模拟「关闭后放大发虚」的观感。</li>
+      <li><b>不做什么</b>：目录（outline）侧栏、页码缩略图、文本重排模式列为 P2，建议 v0.3.0 独立立项（见方案 §2 / D69）。</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===== 纸张设计尺寸（PDF pt @72dpi 等价 CSS px） =====
+  var PAGES = {
+    portrait:  { pw: 595,  ph: 842, label: "A4 竖版 595×842" },
+    landscape: { pw: 960,  ph: 540, label: "16:9 横版 960×540" }
+  };
+  var STAGE_H = 723;          // 内容区外高（1280×860 窗口扣除工具栏/状态栏/控制条后的实测值）
+  var TOTAL_PAGES = 262;
+  var PRESETS = [50, 75, 100, 125, 150, 200, 300];
+
+  // ===== 全局状态（对应 settings.pdfFit / pdfZoom / pdfDpr） =====
+  var state = {
+    fit: "auto",       // auto | width | height | spread | custom
+    zoom: 100,         // 自定义倍率 %
+    dpr: true,
+    orient: "portrait",
+    stageW: 1280,
+    page: 4,
+    mode: "page"       // scroll | page
+  };
+
+  // ===== 演示用纸面内容（按页码轮换，模拟真实翻页） =====
+  var VARIANTS = [
+    {
+      title: "内 容 简 介",
+      body: [
+        "本书是运营管理方面的书籍，将小程序的运营推广问题置于小程序的整个运营管理体系中来说，主要讲述小程序的定位规划、营销吸粉策略、评估优化这三大方面的内容，这三方面的内容之间是三位一体、密切相关的。",
+        "书中通过列举丰富且具有代表性的小程序实际案例来向读者提供一些可行的运营推广办法。案例涉及美食类、电商类、旅游类、媒体类等小程序，可供多个行业的小程序运营者参考借鉴。"
+      ],
+      cip: true
+    },
+    {
+      title: "第 1 章 小程序运营概述",
+      body: [
+        "小程序是一种不需要下载安装即可使用的应用，它实现了应用「触手可及」的梦想，用户扫一扫或搜一下即可打开应用。也体现了「用完即走」的理念，用户不用关心是否安装太多应用的问题。",
+        "从运营的角度看，小程序的价值不在于功能本身，而在于它能否以更低的成本触达目标用户，并在合适的场景中完成转化。本章先建立这个基本判断。"
+      ],
+      cip: false
+    },
+    {
+      title: "3.2 营销吸粉策略",
+      body: [
+        "吸粉的核心是「给用户一个留下来的理由」。常见路径包括：线下扫码引流、社交裂变分享、公众号关联导流、模板消息唤醒，以及基于 LBS 的附近小程序曝光。",
+        "需要特别注意的是，各路径的获客成本差异极大。运营者应当建立一张渠道成本对照表，把每一分钱的花费对应到可验证的转化数据上，而不是凭感觉分配预算。"
+      ],
+      cip: false
+    },
+    {
+      title: "第 7 章 数据评估与优化",
+      body: [
+        "评估体系应当覆盖「获客—激活—留存—转化—传播」五个环节。每个环节选取一至两个关键指标，避免指标过多导致关注度分散。",
+        "优化不是一次性的动作，而是「假设—实验—验证—固化」的循环。每一次改动都应当有明确的可观测预期，否则无法判断改动是否真正有效。"
+      ],
+      cip: false
+    }
+  ];
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function cipHTML() {
+    var lines = [
+      "微信小程序运营与推广完全自学手册 / 王洪波，王袆，… 编著. — 北京：电子工业出版社，2018.6",
+      "ISBN 978-7-121-34145-8",
+      "Ⅰ. ①微… Ⅱ. ①王… Ⅲ. ①网络营销－手册 Ⅳ. ①F713.365.2-62",
+      "中国版本图书馆 CIP 数据核字（2018）第 088404 号"
+    ];
+    var foot = ["策划编辑：高洪霞", "责任编辑：牛 勇", "特约编辑：赵树刚", "印　　刷：北京季峰印刷有限公司", "装　　订：北京季峰印刷有限公司", "出版发行：电子工业出版社", "　　　　　北京市海淀区万寿路 173 信箱", "邮　　编：100036"];
+    var h = '<div class="pp-h2">图书在版编目（CIP）数据</div>';
+    lines.forEach(function (l) { h += '<p class="pp-cip">' + esc(l) + "</p>"; });
+    foot.forEach(function (l) { h += '<p class="pp-cip">' + esc(l) + "</p>"; });
+    return h;
+  }
+
+  function pageHTML(n) {
+    var v = VARIANTS[(n - 1) % VARIANTS.length];
+    var h = '<div class="pdf-page">';
+    h += '<div class="pp-title">' + esc(v.title) + "</div>";
+    v.body.forEach(function (p) { h += '<p class="pp-p">' + esc(p) + "</p>"; });
+    if (v.cip) h += cipHTML();
+    h += '<div class="pp-foot"><span>— ' + n + " —</span><span>邮　　编：100036</span></div>";
+    h += "</div>";
+    return h;
+  }
+
+  // ===== 适配计算（与方案 §3.1 判定式一致：auto = sw > sh ? width : height） =====
+  function resolve() {
+    var P = PAGES[state.orient];
+    var cw = state.stageW - 44;      // 扣 .pdf-stage 左右 padding 22px
+    var ch = STAGE_H - 44;           // 扣上下 padding
+    var sw = cw / P.pw;
+    var sh = ch / P.ph;
+    var sp = Math.min(cw / (2 * P.pw), ch / P.ph);
+    var mode = state.fit;
+    if (mode === "auto") mode = sw > sh ? "width" : "height";
+    var k;
+    if (mode === "width") k = sw;
+    else if (mode === "height") k = sh;
+    else if (mode === "spread") k = sp;
+    else k = state.zoom / 100;
+    return { P: P, cw: cw, ch: ch, sw: sw, sh: sh, sp: sp, mode: mode, k: k };
+  }
+
+  // ===== 渲染主舞台 =====
+  var stage = document.getElementById("pdfStage");
+  var fitBox = document.getElementById("pdfFit");
+
+  function renderStage() {
+    var r = resolve();
+    var k = r.k;
+    var pages = r.mode === "spread" ? [state.page, state.page + 1] : [state.page];
+    var slotW = r.P.pw * k;
+    var slotH = r.P.ph * k;
+
+    stage.style.width = state.stageW + "px";
+    stage.style.height = STAGE_H + "px";
+    stage.classList.toggle("center", slotH <= r.ch);
+    stage.classList.toggle("top", slotH > r.ch);
+    stage.classList.toggle("pdf-blur", !state.dpr && k > 1);
+
+    // 每页一个定尺槽位，槽内纸面按 design 尺寸渲染后整体 scale(k)：
+    // 单页与双页走同一条路径，避免 flex 按未缩放尺寸排布导致错位
+    fitBox.className = "pdf-fit";
+    fitBox.style.width = pages.length * slotW + (pages.length - 1) * 14 + "px";
+    fitBox.style.height = slotH + "px";
+    fitBox.innerHTML = pages
+      .map(function (p) {
+        var inner = p > TOTAL_PAGES
+          ? '<div class="pdf-page" style="visibility:hidden"></div>'
+          : pageHTML(p);
+        return '<div class="pdf-slot" style="width:' + slotW + "px;height:" + slotH + 'px">' + inner + "</div>";
+      })
+      .join("");
+    Array.prototype.forEach.call(fitBox.querySelectorAll(".pdf-page"), function (el) {
+      el.style.transform = "scale(" + k + ")";
+    });
+
+    // 控件与读数同步
+    var pct = Math.round(k * 100);
+    var label = { auto: "自适应", width: "适宽", height: "适高", spread: "双页", custom: "自定义" }[state.fit];
+    document.getElementById("zoomVal").textContent = pct + "%";
+    document.getElementById("zoomChipText").textContent =
+      (state.fit === "custom" ? "自定义 " : label + " ") + pct + "%";
+    document.getElementById("statusRight").textContent =
+      (state.mode === "page" ? "单页翻页" : "连续滚动") + " · " + label + " " + pct + "% · 高清渲染" + (state.dpr ? "开" : "关");
+
+    document.getElementById("roSw").textContent = Math.round(r.sw * 100) + "%";
+    document.getElementById("roSh").textContent = Math.round(r.sh * 100) + "%";
+    document.getElementById("roSp").textContent = Math.round(r.sp * 100) + "%";
+    document.getElementById("roAuto").textContent = r.mode === "width" ? "适宽" : "适高";
+    document.getElementById("ctlWv").textContent = state.stageW + "px";
+
+    var dpr = state.dpr ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    document.getElementById("roBmp").textContent =
+      Math.round(pages.length * r.P.pw * k * dpr) + "×" + Math.round(r.P.ph * k * dpr) + "px";
+    document.getElementById("roDisp").textContent =
+      Math.round(pages.length * r.P.pw * k) + "×" + Math.round(r.P.ph * k) + "px";
+
+    document.getElementById("pgPrev").disabled = state.page <= 1;
+    document.getElementById("pgNext").disabled = state.page >= TOTAL_PAGES;
+    document.getElementById("pgJump").textContent = state.page + " / " + TOTAL_PAGES;
+
+    // 设置面板同步
+    Array.prototype.forEach.call(document.querySelectorAll("#segFit .seg-opt"), function (b) {
+      b.classList.toggle("active", b.getAttribute("data-v") === state.fit);
+    });
+    var range = document.getElementById("zoomRange");
+    range.value = state.zoom;
+    range.disabled = state.fit !== "custom";
+    document.getElementById("zoomNum").textContent = state.zoom + "%";
+    document.getElementById("rowZoom").classList.toggle("row-off", state.fit !== "custom");
+  }
+
+  // ===== ½ 比例静态对比卡 =====
+  function renderCompare() {
+    var P = PAGES.portrait;
+    var frameW = 618, frameH = 340;   // = 1236×679 的一半（½ 比例预览）
+    function mount(id, k, align) {
+      var f = document.getElementById(id);
+      f.style.alignItems = align;
+      var inner = document.createElement("div");
+      inner.style.position = "relative";
+      inner.style.flex = "none";
+      inner.style.width = P.pw * k + "px";
+      inner.style.height = P.ph * k + "px";
+      inner.innerHTML = pageHTML(4);
+      var pg = inner.firstChild;
+      pg.style.position = "absolute";
+      pg.style.top = "0";
+      pg.style.left = "0";
+      pg.style.transformOrigin = "top left";
+      pg.style.transform = "scale(" + k + ")";
+      f.appendChild(inner);
+      return inner;
+    }
+    var before = mount("ccBefore", 0.6, "flex-start");      // 1.2 ÷ 2
+    var after = mount("ccAfter", 1.0387, "flex-start");     // 2.0773 ÷ 2
+
+    // 标注：空白与被裁
+    function anno(parent, cls, style, text, txtStyle) {
+      var a = document.createElement("div");
+      a.className = "anno " + cls;
+      for (var k in style) a.style[k] = style[k];
+      var s = document.createElement("span");
+      s.textContent = text;
+      for (var t in txtStyle) s.style[t] = txtStyle[t];
+      a.appendChild(s);
+      parent.appendChild(a);
+      return a;
+    }
+    // 现状：页面 357×505 居中于 618 宽 → 左右各 130.5px（½ 比例下的 261px）
+    anno(before, "bad", { left: "0", top: "0", width: "130px", height: "340px" },
+      "≈261px 空白", { left: "6px", top: "150px", transform: "rotate(-90deg)", transformOrigin: "left center" });
+    anno(before, "bad", { right: "0", top: "0", width: "130px", height: "340px" },
+      "≈261px 空白", { right: "6px", top: "150px", transform: "rotate(90deg)", transformOrigin: "right center" });
+    anno(before, "bad", { left: "130px", right: "130px", top: "280px", height: "60px", borderStyle: "solid", background: "rgba(239,68,68,.12)" },
+      "底部 331px 被裁", { left: "8px", top: "20px", fontWeight: "600" });
+    // 优化：宽度铺满
+    anno(after, "good", { left: "0", right: "0", top: "0", height: "340px", borderStyle: "solid" },
+      "宽度铺满 1236px · 字号 ≈22px", { left: "50%", top: "10px", transform: "translateX(-50%)", fontWeight: "600" });
+    anno(after, "good", { left: "0", right: "0", top: "300px", height: "40px", borderStyle: "solid", background: "rgba(16,185,129,.10)" },
+      "页内纵向滚动读完一页", { left: "50%", top: "12px", transform: "translateX(-50%)" });
+  }
+
+  // ===== 通用下拉菜单 =====
+  var activeMenu = null;
+  function openMenu(anchor, build) {
+    closeMenu();
+    var menu = document.createElement("div");
+    menu.className = "cat-menu";
+    build(menu);
+    document.body.appendChild(menu);
+    var r = anchor.getBoundingClientRect();
+    var left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 12);
+    menu.style.left = Math.max(12, left) + "px";
+    menu.style.top = r.bottom + 6 + "px";
+    activeMenu = menu;
+    setTimeout(function () { document.addEventListener("mousedown", menuOutside, true); }, 0);
+    return menu;
+  }
+  function menuOutside(ev) { if (activeMenu && !activeMenu.contains(ev.target)) closeMenu(); }
+  function closeMenu() {
+    if (activeMenu) { activeMenu.remove(); activeMenu = null; }
+    document.removeEventListener("mousedown", menuOutside, true);
+  }
+  document.addEventListener("keydown", function (ev) { if (ev.key === "Escape") closeMenu(); });
+
+  // ===== toast =====
+  var toastEl = document.getElementById("toast");
+  var toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.hidden = false;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; }, 2200);
+  }
+
+  // ===== 缩放 chip 档位菜单 =====
+  function openZoomMenu(anchor) {
+    var r = resolve();
+    openMenu(anchor, function (menu) {
+      var t = document.createElement("div");
+      t.className = "menu-title";
+      t.textContent = "适配方式";
+      menu.appendChild(t);
+      [["auto", "自适应"], ["width", "适宽"], ["height", "适高"], ["spread", "双页"], ["custom", "自定义"]].forEach(function (pair) {
+        var key = pair[0], name = pair[1];
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "menu-item" + (state.fit === key ? " current" : "");
+        var kk = key === "auto" ? (r.mode === "width" ? r.sw : r.sh)
+              : key === "width" ? r.sw
+              : key === "height" ? r.sh
+              : key === "spread" ? r.sp
+              : state.zoom / 100;
+        b.innerHTML = esc(name) + ' <span class="dim">' + Math.round(kk * 100) + "%</span>" +
+                      '<span class="ck">&#10003;</span>';
+        b.addEventListener("click", function () {
+          if (key === "custom" && state.fit !== "custom") state.zoom = Math.round(r.k * 100);
+          state.fit = key;
+          closeMenu();
+          renderStage();
+        });
+        menu.appendChild(b);
+      });
+      var sep = document.createElement("div");
+      sep.className = "menu-sep";
+      menu.appendChild(sep);
+      var t2 = document.createElement("div");
+      t2.className = "menu-title";
+      t2.textContent = "倍率预设（切到「自定义」后生效）";
+      menu.appendChild(t2);
+      var wrap = document.createElement("div");
+      wrap.className = "menu-presets";
+      PRESETS.forEach(function (p) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = p + "%";
+        b.addEventListener("click", function () {
+          state.zoom = p;
+          state.fit = "custom";
+          closeMenu();
+          renderStage();
+          showToast("已切到自定义倍率 " + p + "%");
+        });
+        wrap.appendChild(b);
+      });
+      menu.appendChild(wrap);
+      var n = document.createElement("div");
+      n.className = "menu-note";
+      n.textContent = "Ctrl+滚轮可在阅读区直接调整倍率";
+      menu.appendChild(n);
+    });
+  }
+
+  // ===== 页码跳转 =====
+  var pgJump = document.getElementById("pgJump");
+  pgJump.addEventListener("click", function () {
+    if (pgJump.querySelector("input")) return;
+    var input = document.createElement("input");
+    input.type = "text";
+    input.value = String(state.page);
+    pgJump.textContent = "";
+    pgJump.appendChild(input);
+    input.focus();
+    input.select();
+    var done = false;   // Enter 提交后置位，避免紧随的 blur 二次提交
+    function commit() {
+      if (done) return;
+      done = true;
+      var n = parseInt(input.value, 10);
+      if (!isNaN(n)) {
+        var clamped = Math.min(Math.max(n, 1), TOTAL_PAGES);
+        if (clamped !== n) showToast("页码越界，已钳制到 " + clamped);
+        state.page = clamped;
+      }
+      renderStage();
+    }
+    input.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter") { ev.preventDefault(); commit(); }
+      if (ev.key === "Escape") { ev.preventDefault(); done = true; renderStage(); }
+    });
+    input.addEventListener("blur", commit);
+  });
+
+  // ===== 事件绑定 =====
+  document.getElementById("zoomChip").addEventListener("click", function () { openZoomMenu(this); });
+  document.getElementById("zoomIn").addEventListener("click", function () { nudgeZoom(10); });
+  document.getElementById("zoomOut").addEventListener("click", function () { nudgeZoom(-10); });
+  function nudgeZoom(d) {
+    var next = Math.min(400, Math.max(50, state.zoom + d));
+    if (next === state.zoom) return;
+    state.zoom = next;
+    if (state.fit !== "custom") {
+      state.fit = "custom";
+      showToast("已切到自定义倍率 " + next + "%");
+    }
+    renderStage();
+  }
+  document.getElementById("pgPrev").addEventListener("click", function () {
+    state.page = Math.max(1, state.page - (state.fit === "spread" || resolve().mode === "spread" ? 2 : 1));
+    renderStage();
+  });
+  document.getElementById("pgNext").addEventListener("click", function () {
+    state.page = Math.min(TOTAL_PAGES, state.page + (state.fit === "spread" || resolve().mode === "spread" ? 2 : 1));
+    renderStage();
+  });
+
+  // Ctrl+滚轮
+  stage.addEventListener("wheel", function (ev) {
+    if (!ev.ctrlKey) return;
+    ev.preventDefault();
+    var d = ev.deltaY < 0 ? 10 : -10;
+    var next = Math.min(400, Math.max(50, state.zoom + d));
+    if (next === state.zoom) return;
+    state.zoom = next;
+    if (state.fit !== "custom") { state.fit = "custom"; }
+    renderStage();
+  }, { passive: false });
+
+  // 模式段
+  ["modeScroll", "modePage"].forEach(function (id) {
+    document.getElementById(id).addEventListener("click", function () {
+      state.mode = id === "modeScroll" ? "scroll" : "page";
+      document.getElementById("modeScroll").classList.toggle("active", state.mode === "scroll");
+      document.getElementById("modePage").classList.toggle("active", state.mode === "page");
+      Array.prototype.forEach.call(document.querySelectorAll("#segMode .seg-opt"), function (b) {
+        b.classList.toggle("active", b.getAttribute("data-v") === state.mode);
+      });
+      renderStage();
+      showToast(state.mode === "scroll" ? "连续滚动：页间无缝，建议配「适宽」" : "单页翻页：可配「适高 / 双页」整页可见");
+    });
+  });
+
+  // 设置面板：适配方式 / 倍率 / DPR
+  Array.prototype.forEach.call(document.querySelectorAll("#segFit .seg-opt"), function (b) {
+    b.addEventListener("click", function () {
+      var v = b.getAttribute("data-v");
+      if (v === "custom" && state.fit !== "custom") state.zoom = Math.round(resolve().k * 100);
+      state.fit = v;
+      renderStage();
+    });
+  });
+  document.getElementById("zoomRange").addEventListener("input", function () {
+    state.zoom = parseInt(this.value, 10);
+    if (state.fit !== "custom") state.fit = "custom";
+    renderStage();
+  });
+  document.getElementById("swDpr").addEventListener("click", function () {
+    state.dpr = !state.dpr;
+    this.classList.toggle("on", state.dpr);
+    this.setAttribute("aria-checked", state.dpr ? "true" : "false");
+    renderStage();
+    showToast(state.dpr ? "高清渲染已开启（位图 × DPI）" : "高清渲染已关闭（按 CSS 像素渲染，放大发虚）");
+  });
+
+  // 设置面板导航
+  Array.prototype.forEach.call(document.querySelectorAll(".set-nav-item"), function (b) {
+    b.addEventListener("click", function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".set-nav-item"), function (x) {
+        x.classList.remove("active");
+      });
+      b.classList.add("active");
+      ["general", "reading", "appearance", "advanced"].forEach(function (p) {
+        document.getElementById("pane-" + p).hidden = (p !== b.getAttribute("data-pane"));
+      });
+    });
+  });
+
+  // 内容区宽度 / 页面方向
+  document.getElementById("ctlW").addEventListener("input", function () {
+    state.stageW = parseInt(this.value, 10);
+    renderStage();
+  });
+  document.getElementById("ctlOrient").addEventListener("change", function () {
+    state.orient = this.value;
+    renderStage();
+  });
+
+  // ===== 初次渲染 =====
+  renderCompare();
+  renderStage();
+})();
+</script>
+</body>
+</html>

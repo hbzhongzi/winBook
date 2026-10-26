@@ -114,6 +114,45 @@ describe("library v1", () => {
     vi.useRealTimers();
   });
 
+  it("savePosition 保留既有分类（D72：重开不丢分类）", () => {
+    // 真实路径：先打开入架（upsert）→ 书架里归类 → 再次打开（savePosition）
+    upsertEntry(entry("E:\\b.pdf", { format: "pdf" }));
+    setEntryCategory("E:\\b.pdf", "技术");
+    expect(getEntry("E:\\b.pdf")!.cat).toBe("技术"); // 归类生效
+    // 重开：handleOpen 调 savePosition 刷新 lastOpen，应保留 cat
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));
+    savePosition({
+      path: "E:\\b.pdf",
+      name: "b.pdf",
+      format: "pdf",
+      size: 4096,
+      mtime: 5,
+      position: { kind: "pdf", page: 1, pageCount: 120 },
+      progress: 0,
+    });
+    vi.useRealTimers();
+    const e = getEntry("E:\\b.pdf");
+    expect(e).not.toBeNull();
+    expect(e!.cat).toBe("技术"); // 关键：分类不被 savePosition 清空
+    expect(e!.position).toEqual({ kind: "pdf", page: 1, pageCount: 120 });
+  });
+
+  it("savePosition 首次打开（无旧条目）不写脏 cat", () => {
+    savePosition({
+      path: "E:\\c.txt",
+      name: "c.txt",
+      format: "txt",
+      size: 10,
+      mtime: 1,
+      position: null,
+      progress: 0,
+    });
+    const e = getEntry("E:\\c.txt");
+    expect(e).not.toBeNull();
+    expect(e!.cat).toBeUndefined(); // 首次打开不应出现「未分类」脏字段
+  });
+
   it("reportPosition 只更位置，不刷新 lastOpen", () => {
     upsertEntry(entry("E:\\a.epub", { lastOpen: 1234 }));
     reportPosition({

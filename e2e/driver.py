@@ -379,6 +379,22 @@ class App:
         log(f"move_window -> ({x},{y}) ok={bool(ok)} rect={window_rect(self.hwnd)}")
         return window_rect(self.hwnd)
 
+    def resize_to(self, w, h):
+        """把客户区尺寸设为 w×h（v0.2.9 A84：验证窄窗下的适配回落）。
+
+        SetWindowPos 按窗口矩形计量，需先补回标题栏/边框厚度。
+        窗口有最小尺寸限制（main.go 900×600），小于下限时以系统限制为准。
+        """
+        r = window_rect(self.hwnd)
+        cw, ch = self.client_size()
+        ww = w + (r[2] - r[0]) - cw
+        wh = h + (r[3] - r[1]) - ch
+        ok = user32.SetWindowPos(self.hwnd, 0, 0, 0, ww, wh, 0x0002 | 0x0004)  # SWP_NOMOVE|SWP_NOZORDER
+        sleep(400)
+        got = self.client_size()
+        log(f"resize_to -> ({w}x{h}) ok={bool(ok)} client={got}")
+        return got
+
     def dpi(self):
         try:
             return user32.GetDpiForWindow(self.hwnd)

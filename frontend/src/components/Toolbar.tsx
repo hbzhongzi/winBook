@@ -1,5 +1,6 @@
 import type { main } from "../../wailsjs/go/models";
 import type { ReaderMode } from "../utils/settings";
+import { PDF_ZOOM_NUDGE } from "../utils/pdfScale";
 
 type Props = {
   book: main.BookData | null;
@@ -9,6 +10,10 @@ type Props = {
   onShelf: () => void;
   onSettings: () => void;
   onModeChange: () => void;
+  /** v0.2.9：PDF 实际缩放百分比（非 PDF / 未上报为 null） */
+  pdfScalePct?: number | null;
+  /** v0.2.9：倍率微调（±PDF_ZOOM_NUDGE），非 PDF 时不渲染该组 */
+  onZoomNudge?: (delta: number) => void;
 };
 
 const formatLabel: Record<string, string> = { epub: "EPUB", pdf: "PDF", txt: "TXT" };
@@ -19,7 +24,7 @@ function formatSize(size: number): string {
   return size + " B";
 }
 
-export default function Toolbar({ book, loading, readerMode, onOpen, onShelf, onSettings, onModeChange }: Props) {
+export default function Toolbar({ book, loading, readerMode, onOpen, onShelf, onSettings, onModeChange, pdfScalePct, onZoomNudge }: Props) {
   return (
     <header className="toolbar">
       <button type="button" className="btn-primary" onClick={onOpen} disabled={loading}>
@@ -75,6 +80,30 @@ export default function Toolbar({ book, loading, readerMode, onOpen, onShelf, on
               aria-pressed={readerMode === "page"}
             >
               翻页
+            </button>
+          </div>
+        )}
+        {/* v0.2.9：PDF 缩放快捷组（－ 倍率 ＋），仅 PDF 阅读中显示 */}
+        {book?.format === "pdf" && (
+          <div className="zoom-seg" role="group" aria-label="缩放">
+            <button
+              type="button"
+              onClick={() => onZoomNudge?.(-PDF_ZOOM_NUDGE)}
+              title={"缩小（Ctrl+−，每次 " + PDF_ZOOM_NUDGE + "%）"}
+              aria-label="缩小"
+            >
+              &#8722;
+            </button>
+            <span className="zv" title="当前实际倍率（自适应下随窗口变化）">
+              {pdfScalePct != null ? pdfScalePct + "%" : "—"}
+            </span>
+            <button
+              type="button"
+              onClick={() => onZoomNudge?.(PDF_ZOOM_NUDGE)}
+              title={"放大（Ctrl++，每次 " + PDF_ZOOM_NUDGE + "%）"}
+              aria-label="放大"
+            >
+              &#43;
             </button>
           </div>
         )}

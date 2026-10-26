@@ -232,6 +232,11 @@ export function getEntry(path: string): LibraryEntry | null {
  * 打开成功时调用：建/更新条目并刷新 lastOpen。
  * position 传当前已知位置（首次打开为旧值或 null），打开瞬间先占位，
  * 避免条目位置被清空的闪烁；首次 onPosition 上报后再更新。
+ *
+ * D72：必须以「合并旧条目」而非「全新覆盖」方式 upsert，否则旧条目上的
+ * `cat`（分类）等字段会在重开时被丢掉——表现为「分类后重新打开分类消失」。
+ * 这里只覆盖打开相关的标量（name/size/mtime/format/lastOpen/position/progress），
+ * 其余字段（含 cat）继承旧条目。
  */
 export function savePosition(input: {
   path: string;
@@ -242,7 +247,9 @@ export function savePosition(input: {
   position: ReadingPosition | null;
   progress: number;
 }): void {
-  upsertEntry({
+  const prev = getEntry(input.path);
+  const merged: LibraryEntry = {
+    ...(prev ?? {}),
     path: input.path,
     name: input.name,
     format: input.format,
@@ -251,7 +258,8 @@ export function savePosition(input: {
     lastOpen: Math.floor(Date.now() / 1000),
     position: input.position,
     progress: clamp01(input.progress),
-  });
+  };
+  upsertEntry(merged);
 }
 
 /** 阅读中调用：只更新 position/progress，不刷新 lastOpen（不打乱书架排序） */

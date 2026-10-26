@@ -192,13 +192,21 @@ pre.txt-viewer {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  /* 预留滚动条槽：避免「页高变化 → 滚动条出现/消失 → 内盒宽度变化 → 再重算」振荡（v0.2.9） */
+  scrollbar-gutter: stable;
 }
+/* v0.2.9：适高/双页整页可见时垂直居中；适宽（页内滚动）顶部对齐。
+   属性由 PdfViewer 按适配结果直接写 dataset（JS 驱动，非 React 管理） */
+.pdf-canvas-area[data-fit="center"] { align-items: center; }
 .pdf-page {
   position: relative;
   background: #fff;
   box-shadow: var(--page-shadow);
   line-height: 0;
+  flex: none;
 }
+/* v0.2.9 双页并排：两 canvas 横排 + 14px 间距；宽度由 JS 按两页实际宽度写入 */
+.pdf-page[data-spread="1"] { display: flex; gap: 14px; }
 .pdf-canvas { display: block; }
 .pdf-footer {
   position: absolute;
@@ -238,15 +246,99 @@ pre.txt-viewer {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.zoom-chip {
-  margin-left: auto;
-  font-size: 12px;
+/* v0.2.9：页码跳转（点击指示器变输入框，O11） */
+.pg-jump {
+  font-size: 13px;
   color: var(--text-2);
+  min-width: 72px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px 8px;
+  user-select: none;
+}
+.pg-jump:hover { background: var(--active-bg); color: var(--text); }
+.pg-jump.editing { padding: 0; background: none; cursor: default; }
+.pg-jump input {
+  width: 52px;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface-bg);
+  text-align: center;
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+/* v0.2.9：缩放 chip（可交互，点开档位菜单） */
+.zoom-chip-wrap { position: relative; margin-left: auto; }
+.zoom-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-bg);
+  border-radius: 999px;
+  padding: 4px 11px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.zoom-chip-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--active-bg); }
+.zoom-chip-btn .cv { color: var(--text-3); font-size: 11px; }
+/* 档位菜单：控制条在窗口底部，菜单向上展开 */
+.zoom-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  min-width: 172px;
   background: var(--surface-bg);
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 3px 10px;
+  border-radius: 9px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .18);
+  padding: 5px;
 }
+.zoom-menu .menu-title { font-size: 10.5px; color: var(--text-3); padding: 5px 8px 4px; }
+.zoom-menu .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.zoom-menu .menu-item:hover { background: var(--active-bg); }
+.zoom-menu .menu-item .dim { margin-left: auto; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.zoom-menu .menu-item .ck { visibility: hidden; color: var(--accent); font-size: 11px; }
+.zoom-menu .menu-item.current .ck { visibility: visible; }
+.zoom-menu .menu-sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
+.zoom-menu .menu-presets { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px 6px; }
+.zoom-menu .menu-presets button {
+  border: 1px solid var(--border);
+  background: var(--surface-bg);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  padding: 3px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.zoom-menu .menu-presets button:hover { border-color: var(--accent); color: var(--accent); background: var(--active-bg); }
+.zoom-menu .menu-note { font-size: 10.5px; color: var(--text-3); padding: 4px 8px 5px; line-height: 1.6; }
 
 /* ===== EPUB ===== */
 /* 目录侧栏与正文必须横向并排：.state 默认 flex-direction: column，
@@ -674,6 +766,23 @@ pre.txt-viewer {
   font-variant-numeric: tabular-nums;
 }
 .set-note { font-size: 11.5px; color: var(--text-3); margin: 10px 0 0; line-height: 1.6; }
+/* v0.2.9：PDF 适配面板行（倍率滑杆 / 高清开关） */
+.set-card-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--border-soft);
+  margin-top: 12px;
+}
+.set-card-row.row-off { opacity: .45; }
+.set-row-label { font-size: 12.5px; color: var(--text); min-width: 220px; }
+.set-sub { display: block; font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.6; }
+.zoom-set { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+.zoom-range { width: 190px; accent-color: var(--accent); cursor: pointer; }
+.zoom-range:disabled { cursor: not-allowed; }
+.zoom-num { font-size: 12.5px; color: var(--text); min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
 .set-card-teased { background: var(--bar-bg); border-style: dashed; }
 .set-card-teased h3, .set-card-teased .set-desc { opacity: .75; }
 .tag-roadmap {
@@ -1065,6 +1174,38 @@ pre.txt-viewer {
 }
 .mode-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* ===== PDF 缩放快捷组（v0.2.9：工具栏 － 倍率 ＋）===== */
+.zoom-seg {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bar-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.zoom-seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 15px;
+  width: 28px;
+  height: 26px;
+  line-height: 1;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.zoom-seg button:hover { background: var(--surface-bg); color: var(--accent); }
+.zoom-seg .zv {
+  min-width: 52px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  padding: 0 4px;
+}
+
 /* ===== EPUB 翻页模式导航（v0.2.5 F21：悬浮贴底 + 自动隐藏）=====
    交互（鼠标移动/翻页/章节切换）复现，2.5s 闲置淡出；隐藏态 visibility 防
    「看不见的按钮」被 Tab 聚焦或误点；hover 到按钮组本身保持显示。 */
@@ -1157,6 +1298,7 @@ pre.txt-viewer {
   flex: 1;
   overflow: auto;
   background: var(--bg);
+  scrollbar-gutter: stable;
 }
 .pdf-scroll-track {
   display: flex;
@@ -1165,8 +1307,10 @@ pre.txt-viewer {
   gap: 12px;
   padding: 16px 0;
 }
+/* v0.2.9：槽宽由 JS 按适配结果 inline 写入（去 min(720px,92%) 硬编码，O4）；
+   此处仅为 JS 未就绪时的兜底 */
 .pdf-page-slot {
-  width: min(720px, 92%);
+  width: 100%;
   background: var(--surface-bg);
   box-shadow: var(--page-shadow);
   border-radius: 4px;
@@ -1174,6 +1318,7 @@ pre.txt-viewer {
   display: flex;
   align-items: flex-start;
   justify-content: center;
+  flex: none;
 }
 .pdf-page-slot .pdf-canvas { width: 100%; height: auto; display: block; }
 .pdf-page-placeholder {

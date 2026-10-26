@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OpenBook, OpenBookPath, SupportedExts } from "../wailsjs/go/main/App";
 import { WindowSetTitle, EventsEmit, EventsOn, OnFileDrop, OnFileDropOff } from "../wailsjs/runtime/runtime";
 import type { main } from "../wailsjs/go/models";
@@ -16,6 +16,12 @@ import {
   ALL_TAB,
 } from "./utils/categories";
 import { loadSettings, saveSettings, subscribeSettings, type ReaderMode, type Settings } from "./utils/settings";
+import {
+  FIT_LABELS,
+  nudgeZoom,
+  type PdfFit,
+  type PdfViewHandlers,
+} from "./utils/pdfScale";
 import { resolveHotkeyAction } from "./utils/readerHotkeys";
 import { dispatchReaderCommand, notifyPagerActivity } from "./utils/readerCommands";
 import { applyAppTheme } from "./utils/readingTheme";
@@ -61,6 +67,8 @@ export default function App() {
   const bookPathRef = useRef<string | null>(null);
   // 同步取位置注册位：Viewer 挂载时注册（离场节点 flush 实时取）
   const positionGetterRef = useRef<(() => PositionReport | null) | null>(null);
+  // v0.2.9：PDF 实际缩放上报（工具栏数值 / 状态栏文案 / 倍率微调基点同一真相）
+  const [pdfScale, setPdfScale] = useState<{ pct: number; fit: PdfFit } | null>(null);
 
   // ===== 过渡动画状态（v0.2.1）=====
   // busy：打开/恢复位置的加载遮罩（leaving = 淡出中，220ms 后卸载）
@@ -206,10 +214,61 @@ export default function App() {
         captureForRemount();
         setBusy({ text: "正在切换阅读模式…", leaving: false });
       }
-      setSettings(saveSettings(next));
+      // v0.2.9：从其它适配方式切到「自定义」且本次未显式带倍率时，
+      // 继承当前实际倍率（HTML 基线口径；显式设值则不覆盖用户选择）
+      const inheritZoom =
+        next.pdfFit === "custom" &&
+        settings.pdfFit !== "custom" &&
+        next.pdfZoom === settings.pdfZoom &&
+        pdfScale != null;
+      const effective = inheritZoom ? { ...next, pdfZoom: pdfScale.pct } : next;
+      setSettings(saveSettings(effective));
     },
-    [settings.readerMode, book, captureForRemount]
+    [settings.readerMode, book, captureForRemount, settings.pdfFit, settings.pdfZoom, pdfScale]
   );
+
+  // v0.2.9：倍率微调（工具栏 ± / Ctrl+滚轮）。非自定义模式下以当前实际倍率为基点，
+  // 一次点击即切到「自定义」（避免「自适应下点 + 无反应」的死锁感）。
+  const handleZoomNudge = useCallback(
+    (delta: number) => {
+      const base = settings.pdfFit === "custom" ? settings.pdfZoom : (pdfScale?.pct ?? settings.pdfZoom);
+      const next = nudgeZoom(base, delta);
+      if (next === base) return;
+      handleSettingsChange({ ...settings, pdfFit: "custom", pdfZoom: next });
+    },
+    [settings, pdfScale, handleSettingsChange]
+  );
+
+  const handleScaleReport = useCallback((r: { pct: number; fit: PdfFit }) => {
+    setPdfScale((prev) => (prev && prev.pct === r.pct && prev.fit === r.fit ? prev : r));
+  }, []);
+
+  // 换书/回书架：作废旧书的上报，避免工具栏与状态栏短暂显示上一本的倍率
+  useEffect(() => {
+    setPdfScale(null);
+  }, [book]);
+
+  const pdfView = useMemo<PdfViewHandlers>(
+    () => ({
+      onScaleReport: handleScaleReport,
+      onFitChange: (fit: PdfFit) => handleSettingsChange({ ...settings, pdfFit: fit }),
+      onZoomPreset: (zoom: number) => handleSettingsChange({ ...settings, pdfFit: "custom", pdfZoom: zoom }),
+      onZoomNudge: handleZoomNudge,
+    }),
+    [handleScaleReport, handleSettingsChange, handleZoomNudge, settings]
+  );
+
+  // v0.2.9：状态栏 PDF 动态文案（实际适配方式 + 倍率 + 高清开关）
+  const pdfDetail =
+    book?.format === "pdf" && pdfScale
+      ? (settings.readerMode === "page" ? "单页翻页" : "连续滚动") +
+        " · " +
+        FIT_LABELS[pdfScale.fit] +
+        " " +
+        pdfScale.pct +
+        "% · 高清渲染" +
+        (settings.pdfDpr ? "开" : "关")
+      : null;
 
   // 工具栏即时切换阅读模式（与设置面板写同一 readerMode 字段）
   const toggleReaderMode = useCallback(() => {
@@ -408,6 +467,8 @@ export default function App() {
         onShelf={handleShelf}
         onSettings={() => setShowSettings(true)}
         onModeChange={toggleReaderMode}
+        pdfScalePct={book?.format === "pdf" ? pdfScale?.pct ?? null : null}
+        onZoomNudge={handleZoomNudge}
       />
       <ErrorBar error={error} onClose={() => setError(null)} />
       <BookViewer
@@ -428,6 +489,7 @@ export default function App() {
         onOpenPath={(path) => void handleOpen(path)}
         onRemoveEntry={handleRemoveEntry}
         onOpenManager={() => setShowShelfManager(true)}
+        pdfView={pdfView}
       />
       <StatusBar
         book={book}
@@ -435,6 +497,7 @@ export default function App() {
         entries={entries}
         readerMode={settings.readerMode}
         savedFlash={savedFlash}
+        pdfDetail={pdfDetail}
       />
       {showSettings && (
         <SettingsPanel

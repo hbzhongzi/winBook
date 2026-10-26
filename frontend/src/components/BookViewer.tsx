@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import type { main } from "../../wailsjs/go/models";
 import type { ReaderMode, Settings } from "../utils/settings";
+import type { PdfViewHandlers } from "../utils/pdfScale";
 import type { LibraryEntry, PositionReport, ReadingPosition } from "../utils/library";
 import { entryCategory, formatRelativeTime, progressLabel } from "../utils/library";
 import { ALL_TAB, UNCLASSIFIED, allCategories, visibleCategories } from "../utils/categories";
@@ -40,6 +41,8 @@ type Props = {
   onRemoveEntry: (path: string) => void;
   /** v0.2.8：打开书架管理对话框（自选清除 / 二次确认），取代原直接清空 */
   onOpenManager: () => void;
+  /** v0.2.9：PDF 视图交互回调（透传给 PdfViewer） */
+  pdfView?: PdfViewHandlers;
 };
 
 const formatLabel: Record<string, string> = { epub: "EPUB", pdf: "PDF", txt: "TXT" };
@@ -73,6 +76,7 @@ export default function BookViewer({
   onOpenPath,
   onRemoveEntry,
   onOpenManager,
+  pdfView,
 }: Props) {
   // ===== v0.2.8 分类交互状态 =====
   // 卡片分类标签菜单：menuPath 为打开菜单的图书 path；newCatFor 为「就地新建分类」态
@@ -431,8 +435,10 @@ export default function BookViewer({
             dataBase64={book.dataBase64 ?? ""}
             mode={readerMode}
             initialPage={fmtResume?.kind === "pdf" ? fmtResume.page : undefined}
+            settings={settings}
             getterRef={getterRef}
             onReady={handleReady}
+            pdfView={pdfView}
           />
         )}
         {book.format === "epub" && (

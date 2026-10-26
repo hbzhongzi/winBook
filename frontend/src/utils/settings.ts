@@ -1,5 +1,6 @@
 // 应用设置 v4：EPUB 预加载章节数、阅读主题、界面强调色、正文字号、阅读模式、
-// 行距、正文字体、正文页边距（v0.2.4 版式三件套）、阅读快捷键键位（v0.2.5 F24）。
+// 行距、正文字体、正文页边距（v0.2.4 版式三件套）、阅读快捷键键位（v0.2.5 F24）、
+// PDF 适配三件套（v0.2.9：pdfFit/pdfZoom/pdfDpr，存储键与 version 均不变，D67）。
 // 持久化到 localStorage；变更通过订阅机制广播，让已打开的书籍即时生效（无需重开图书）。
 // v3（含版式三件套）全量迁移、v2 全量迁移、v1（仅 epubPreloadCount）只读保留，均不删除。
 
@@ -9,6 +10,15 @@ import {
   normalizeHotkeyMap,
   type HotkeyMap,
 } from "./readerHotkeys";
+import {
+  PDF_FIT_DEFAULT,
+  PDF_ZOOM_DEFAULT,
+  clampPdfZoom,
+  normalizePdfFit,
+  type PdfFit,
+} from "./pdfScale";
+
+export type { PdfFit };
 
 export type ThemeName = "light" | "dark" | "eye" | "sepia";
 
@@ -54,6 +64,12 @@ export type Settings = {
   contentMargin: number;
   /** 阅读快捷键键位（v0.2.5 F24）：动作 → KeyboardEvent.key 数组，可设置面板自定义 */
   hotkeys: HotkeyMap;
+  /** PDF 适配方式（v0.2.9）：auto=自适应（默认）/ width=适宽 / height=适高 / spread=双页 / custom=自定义 */
+  pdfFit: PdfFit;
+  /** PDF 自定义倍率 %（v0.2.9）：50–400，仅 pdfFit="custom" 生效 */
+  pdfZoom: number;
+  /** PDF 高清渲染（v0.2.9）：按 devicePixelRatio（上限 2）渲染位图；关闭按 CSS 像素 */
+  pdfDpr: boolean;
 };
 
 export const PRELOAD_MIN = 0;
@@ -104,6 +120,9 @@ export const DEFAULT_SETTINGS: Settings = {
   fontFamily: FONT_FAMILY_DEFAULT,
   contentMargin: MARGIN_DEFAULT,
   hotkeys: cloneHotkeyMap(DEFAULT_HOTKEYS),
+  pdfFit: PDF_FIT_DEFAULT,
+  pdfZoom: PDF_ZOOM_DEFAULT,
+  pdfDpr: true,
 };
 
 type Listener = (s: Settings) => void;
@@ -167,6 +186,10 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     fontFamily: normalizeFontFamily(r.fontFamily),
     contentMargin: normalizeContentMargin(r.contentMargin),
     hotkeys: normalizeHotkeyMap(r.hotkeys),
+    pdfFit: normalizePdfFit(r.pdfFit),
+    pdfZoom: clampPdfZoom(Number(r.pdfZoom)),
+    // 显式 boolean 才采用；缺字段（旧配置）默认开启高清
+    pdfDpr: typeof r.pdfDpr === "boolean" ? r.pdfDpr : true,
   };
 }
 

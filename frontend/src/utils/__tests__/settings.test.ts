@@ -333,3 +333,70 @@ describe("settings v4（v0.2.5 快捷键自定义）", () => {
     expect(s.hotkeys.prev).toEqual(["j"]);
   });
 });
+
+describe("settings v0.2.9（PDF 适配三件套）", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("DEFAULT_SETTINGS 含三字段且口径正确", () => {
+    expect(DEFAULT_SETTINGS.pdfFit).toBe("auto");
+    expect(DEFAULT_SETTINGS.pdfZoom).toBe(100);
+    expect(DEFAULT_SETTINGS.pdfDpr).toBe(true);
+  });
+
+  it("旧配置（无三字段）载入后回落默认，不抛错", () => {
+    localStorage.setItem(
+      "bookeditor.settings.v4",
+      JSON.stringify({ theme: "dark", readerMode: "page", fontSize: 16 })
+    );
+    const s = loadSettings();
+    expect(s.theme).toBe("dark");
+    expect(s.pdfFit).toBe("auto");
+    expect(s.pdfZoom).toBe(100);
+    expect(s.pdfDpr).toBe(true);
+  });
+
+  it("normalizeSettings 逐字段校验：非法 fit/越界 zoom/非布尔 dpr", () => {
+    const s = normalizeSettings({
+      pdfFit: "neon" as never,
+      pdfZoom: 9999,
+      pdfDpr: "yes" as never,
+    });
+    expect(s.pdfFit).toBe("auto");
+    expect(s.pdfZoom).toBe(400);
+    expect(s.pdfDpr).toBe(true);
+  });
+
+  it("合法值原样保留（含 spread 与自定义倍率）", () => {
+    const s = normalizeSettings({ pdfFit: "spread", pdfZoom: 175, pdfDpr: false });
+    expect(s.pdfFit).toBe("spread");
+    expect(s.pdfZoom).toBe(175);
+    expect(s.pdfDpr).toBe(false);
+  });
+
+  it("saveSettings 合并语义：只改 pdfFit 不动其余字段", () => {
+    saveSettings({ readerMode: "page", fontSize: 18 });
+    const s = saveSettings({ pdfFit: "height" });
+    expect(s.readerMode).toBe("page");
+    expect(s.fontSize).toBe(18);
+    expect(s.pdfFit).toBe("height");
+  });
+
+  it("订阅广播携带新字段（Viewer 即时生效链路）", () => {
+    const seen: string[] = [];
+    const off = subscribeSettings((s) => seen.push(s.pdfFit));
+    saveSettings({ pdfFit: "custom", pdfZoom: 130 });
+    off();
+    expect(seen).toEqual(["custom"]);
+    expect(loadSettings().pdfZoom).toBe(130);
+  });
+
+  it("resetSettings 把三字段复位为默认", () => {
+    saveSettings({ pdfFit: "spread", pdfZoom: 300, pdfDpr: false });
+    const s = resetSettings();
+    expect(s.pdfFit).toBe("auto");
+    expect(s.pdfZoom).toBe(100);
+    expect(s.pdfDpr).toBe(true);
+  });
+});
