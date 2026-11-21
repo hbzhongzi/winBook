@@ -1599,7 +1599,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // "The Complete Sherlock Holmes"），原 text.length>0 判定把它误判为有正文 →
         // OPEN_OK 后一直停在扉页=「翻页没内容」。滚动模式靠窗口管理器补齐相邻章节
         // 正文故无此问题。翻页模式追加最小正文阈值，空壳扉页强制走跳章到首个有正文章。
-        if (isPage && state === true) {
+        // 提取为函数：strict 与 loose 两处复检都要应用，否则 loose 复检把同一扉页
+        // 又判回 state=true 直接 return，跳章循环根本执行不到（D85 首次修复的漏洞）。
+        const shellCoverCheck = (s: boolean | null): boolean | null => {
+          if (!isPage || s !== true) return s;
           const iframe = container.querySelector("iframe");
           let textLen = -1;
           try {
@@ -1612,10 +1615,12 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             // 跨域不可访问：不干预原判定
           }
           if (textLen >= 0 && textLen < 80) {
-            epubDiag("EMPTY_FIRST_PAGE", `len=${textLen}; skip to first content chapter`);
-            state = false;
+            epubDiag("EMPTY_SHELL_PAGE", `len=${textLen}; treat as empty`);
+            return false;
           }
-        }
+          return s;
+        };
+        state = shellCoverCheck(state);
         if (state !== false) {
           failOnDisplayError = false; // 位置恢复的 display 失败只降级，不判整本失败
           const r0 = resumeRef.current;
@@ -1659,6 +1664,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
         // 二次沉淀复检（放宽 readyState 要求），排除章节体积大、绘制慢导致的误判
         state = await settleAndCheck(container, rendition, false);
+        state = shellCoverCheck(state); // D85：空壳扉页在此也必须判空，否则被判回 true 提前 return
         epubDiag("SETTLE_LOOSE", `state=${state}`);
         if (destroyed) return;
         if (state !== false) {
@@ -1670,6 +1676,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         for (let step = 1; step <= EMPTY_SECTION_RETRY && step < items.length; step++) {
           setActive(step);
           onChapterChangeRef.current?.(items[step].label);
+          // D84：此跳章走打开流程内，不经 jump()，必须手动设 guard，
+          // 否则 display 撑宽 iframe 触发的 resize 会清掉刚加载的正文（"一瞬间后消失"）。
+          jumpResizeGuardRef.current = Date.now() + 1500;
           try {
             await withTimeout(rendition.display(items[step].href), OPEN_TIMEOUT_MS);
           } catch {
@@ -1680,11 +1689,24 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           }
           if (destroyed) return;
           state = await settleAndCheck(container, rendition, false);
+          state = shellCoverCheck(state); // D85：跳到的章也要排除空壳页
           if (destroyed) return;
           if (state !== false) {
-            failOnDisplayError = false; // 同上：跳章后的位置恢复 display 失败只降级
-            await applyResume();
-            failOnDisplayError = true;
+            // D86：若恢复位置指向的就是空壳扉页（首章），跳章后绝不再 applyResume——
+            // 它会用旧 CFI 再 display 回扉页，把刚跳到的正文清掉（"一瞬间后消失"）。
+            const r = resumeRef.current;
+            const resumeIsShellCover =
+              !!r &&
+              r.kind === "epub" &&
+              hrefWithoutHash(r.href) === hrefWithoutHash(items[0].href);
+            if (resumeIsShellCover) {
+              epubDiag("RESUME_SKIP_SHELL", `href=${r?.href ?? ""} (resume 指向空壳扉页)`);
+              resumeRef.current = null;
+            } else {
+              failOnDisplayError = false; // 同上：跳章后的位置恢复 display 失败只降级
+              await applyResume();
+              failOnDisplayError = true;
+            }
             if (destroyed) return;
             initialPhase = false;
             epubDiag("OPEN_OK", `跳章恢复:第${step + 1}章`);
