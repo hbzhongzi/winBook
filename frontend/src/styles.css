@@ -171,7 +171,10 @@ body {
 .errorbar .err-close:hover { background: #fee2e2; }
 
 /* ===== 内容区 ===== */
-.content { flex: 1; min-height: 0; display: flex; }
+/* D94/D95：flex item 默认 min-width:auto，EPUB 翻页超宽 iframe（实测 43764px）
+   会撑破 .content 的 min-content 造成横向溢出；显式 min-width:0 防溢出。
+   标记面板已改为弹窗浮层（D95），不再依赖此处收缩让位。 */
+.content { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .state-host { flex: 1; min-width: 0; display: flex; }
 .state { flex: 1; min-width: 0; display: none; flex-direction: column; position: relative; }
 .state.active { display: flex; }
@@ -1476,7 +1479,7 @@ pre.txt-viewer {
    深色主题下工具条/面板/模态自动跟随 --surface-bg / --border。 */
 
 /* 正文与标记面板的行容器（面板 340px 固定右侧，正文 flex:1） */
-.app-body { flex: 1; min-height: 0; display: flex; }
+.app-body { flex: 1; min-height: 0; display: flex; position: relative; }
 
 /* ===== 高亮（TXT <mark> / EPUB SVG <g> 挂 mark-hl） ===== */
 .mark-hl {
@@ -1631,23 +1634,33 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
   pointer-events: none;
 }
 
-/* ===== 标记记录面板 ===== */
+/* ===== 标记记录面板（D95：弹窗浮层，覆盖正文右侧，不挤占布局） ===== */
+.marks-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.22);
+  z-index: 1003;
+  animation: marksFadeIn .16s ease both;
+}
 .marks-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
   width: 340px;
-  flex: none;
-  /* D92：EPUB iframe 带 translateZ(0) 创建层叠上下文，且翻页时宽度可达数万像素，
-     其合成层会盖住右侧面板（表现为点了「标记」按钮 active 却看不到面板）。
-     与 mark-toolbar(1002)/bubble(1003) 同法提到最上层，确保面板可见可点。 */
-  position: relative;
   z-index: 1004;
-  /* D93：iframe 靠 translateZ(0) 成为合成层才盖住面板；面板也提升为合成层，
-     让两者处于同一合成栈按 z-index 正确排序（单纯 position/z-index 不足以对抗合成层）。 */
-  transform: translateZ(0);
   border-left: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
   background: var(--surface-bg);
   min-height: 0;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.18);
+  animation: marksSlideIn .18s ease both;
+}
+@keyframes marksFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes marksSlideIn {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
 }
 .mp-head {
   display: flex;

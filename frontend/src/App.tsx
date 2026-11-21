@@ -697,18 +697,22 @@ export default function App() {
           marksCtx={marksCtx}
         />
         {showMarks && book && (
-          <MarksPanel
-            bookName={book.name.replace(/\.[^.]+$/, "")}
-            marks={currentBookMarks}
-            allMarks={marks}
-            onClose={() => setShowMarks(false)}
-            onJump={handleMarkJump}
-            onEdit={marksCtx.onEdit}
-            onWriteIdea={handleWriteIdea}
-            onDelete={marksCtx.onDelete}
-            onClearBook={handleClearBookMarks}
-            onToast={showMarkToast}
-          />
+          <>
+            {/* D95：弹窗浮层——点击遮罩关闭，面板浮在正文右侧不占布局 */}
+            <div className="marks-backdrop" onClick={() => setShowMarks(false)} />
+            <MarksPanel
+              bookName={book.name.replace(/\.[^.]+$/, "")}
+              marks={currentBookMarks}
+              allMarks={marks}
+              onClose={() => setShowMarks(false)}
+              onJump={handleMarkJump}
+              onEdit={marksCtx.onEdit}
+              onWriteIdea={handleWriteIdea}
+              onDelete={marksCtx.onDelete}
+              onClearBook={handleClearBookMarks}
+              onToast={showMarkToast}
+            />
+          </>
         )}
       </div>
       <StatusBar
