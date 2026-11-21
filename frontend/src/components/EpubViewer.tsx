@@ -9,6 +9,7 @@ import { usePagerVisibility } from "../utils/usePagerVisibility";
 import { applyReadingStyle } from "../utils/readingTheme";
 import type { ReadingPosition, PositionReport } from "../utils/library";
 import { MARK_SELECT_MIN, type Mark, type MarkColor, type MarkLocator } from "../utils/marks";
+import { epubDiag, clearEpubDiag, getEpubDiagText } from "../utils/epubDiag";
 import MarkToolbar, { type MarkToolbarMode } from "./MarkToolbar";
 import type { MarksContext } from "./marksContext";
 
@@ -698,6 +699,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   const [toc, setToc] = useState<EpubNavItem[]>([]);
   const [active, setActive] = useState(0);
   const [failed, setFailed] = useState(false);
+  // 失败原因码（D79）：失败页展示当前触发点，配合完整诊断文本可定位
+  const [failReason, setFailReason] = useState("");
+  const [diagOpen, setDiagOpen] = useState(false);
 
   // onChapterChange 经 ref 调用：父组件每次渲染都会传入新函数引用，
   // 若直接进 effect 依赖会导致 effect 反复重跑（书籍被销毁重建、目录状态重置）。
@@ -983,8 +987,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     // readerMode，改模式即整组件重挂载，故 mode 视为常量，无需内部响应式重配置）。
     const isPage = mode === "page";
 
-    const fail = () => {
+    const fail = (reason: string) => {
       if (destroyed) return;
+      epubDiag("FAIL", reason);
+      setFailReason(reason);
       setFailed(true);
       // 打开失败（含超时）时主动销毁，避免挂起的 book 实例残留
       try {
@@ -1001,6 +1007,8 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     let unwireScroll: (() => void) | null = null;
 
     (async () => {
+      clearEpubDiag();
+      epubDiag("OPEN_BEGIN", `mode=${mode} b64len=${dataBase64.length}`);
       // displayError 仅在「初始首章显示」阶段触发失败：用户主动点击无效目录项时
       // 由 jump() 自行吞掉拒绝，不整本书判定失败。
       // failOnDisplayError 进一步把「阅读位置恢复」的 display 排除在失败判定外：
@@ -1011,6 +1019,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
       try {
         const bytes = base64ToUint8Array(dataBase64);
+        epubDiag("BYTES", `len=${bytes.length}`);
         const book = ePub(bytes.buffer as ArrayBuffer) as unknown as EpubBook;
         bookRef.current = book;
         // manager: "continuous" —— 多章拼接渲染（epubjs ContinuousViewManager）。
@@ -1098,8 +1107,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
         // displayError：section 加载失败时 epubjs 只抛事件、display() 永久挂起，
         // 监听后立即失败，不必等超时（实测：部分真实书触发此路径）。
-        rendition.on?.("displayError", () => {
-          if (initialPhase && failOnDisplayError) fail();
+        rendition.on?.("displayError", (err: unknown) => {
+          epubDiag("displayError", (err as { message?: string })?.message ?? String(err));
+          if (initialPhase && failOnDisplayError) fail("displayError:首章/目录加载");
         });
 
         // 必须等 book.opened，不能只等 loaded.navigation：
@@ -1112,6 +1122,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // 真书实测（关键对话 1.8MB/18 资源）：navigation 79ms 即 resolve，
         // replacementUrls.length=0；小样本因资源少、建 URL 快，竞态常赢故未暴露。
         await withTimeout(book.opened, OPEN_TIMEOUT_MS);
+        epubDiag("BOOK_OPENED", `spine=${book.spine?.length ?? "?"}`);
         if (destroyed) return;
 
         // 强制 blobUrl 模式：epubjs 默认 srcdoc（about:srcdoc 文档），
@@ -1124,12 +1135,14 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // （renderTo 返回时 manager 尚未创建，提前补设会静默无效；
         // ContinuousViewManager 的 viewSettings 也不透传 renderTo 的 method 选项）。
         await withTimeout(rendition.started ?? Promise.resolve(), OPEN_TIMEOUT_MS);
+        epubDiag("RENDITION_STARTED");
         if (destroyed) return;
         const mgr = rendition.manager;
         if (mgr?.viewSettings) mgr.viewSettings.method = "blobUrl";
 
         // 目录加载：opened 后必然已完成；保留 await 与超时兜底
         const nav = await withTimeout(book.loaded.navigation, OPEN_TIMEOUT_MS);
+        epubDiag("NAV_LOADED", `toc=${nav.toc?.length ?? 0}`);
         if (destroyed) return;
         const items = flattenToc(nav.toc ?? []);
         setToc(items);
@@ -1165,7 +1178,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // （spine 首项常是目录里没有的封面/版权页/书内目录页）。真书《关键对话》
         // spine 顺序为 cover → TOC → 正文，落到目录首章更符合阅读直觉。
         const startTarget = items.length > 0 ? items[0].href : undefined;
+        epubDiag("DISPLAY_START", `target=${startTarget ?? "(none)"}`);
         await withTimeout(rendition.display(startTarget), OPEN_TIMEOUT_MS);
+        epubDiag("DISPLAY_OK");
         if (destroyed) return;
 
         // manager 在 rendition.started 后已存在；两种模式都引用它（applyResume 恢复用）。
@@ -1524,18 +1539,30 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // 背景：部分商业 EPUB 首章为图片页/空壳页，或 renderTo 时容器未完成布局，
         // 表现为目录正常、正文纯白且无任何错误提示（用户实测反馈）。
         let state = await settleAndCheck(container, rendition, true);
+        epubDiag("SETTLE_STRICT", `state=${state}`);
         if (destroyed) return;
         if (state !== false) {
           failOnDisplayError = false; // 位置恢复的 display 失败只降级，不判整本失败
+          const r0 = resumeRef.current;
+          epubDiag(
+            "RESUME",
+            !r0
+              ? "none"
+              : r0.kind === "epub"
+                ? `kind=epub cfi=${!!r0.cfi} href=${r0.href ?? ""}`
+                : `kind=${r0.kind}`
+          );
           await applyResume();
           failOnDisplayError = true;
           if (destroyed) return;
           initialPhase = false;
+          epubDiag("OPEN_OK", "首章内容正常");
           return; // 有内容 / 无法判定 → 接受
         }
 
         // 二次沉淀复检（放宽 readyState 要求），排除章节体积大、绘制慢导致的误判
         state = await settleAndCheck(container, rendition, false);
+        epubDiag("SETTLE_LOOSE", `state=${state}`);
         if (destroyed) return;
         if (state !== false) {
           initialPhase = false;
@@ -1551,7 +1578,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           } catch {
             // 跳章显示失败：明确报错，不留无提示白屏
             // （epubjs 的 display 失败时 promise 永不 settle，只能靠超时兜底）
-            fail();
+            fail("跳章 display 超时:第" + (step + 1) + "章 " + items[step].href);
             return;
           }
           if (destroyed) return;
@@ -1563,13 +1590,14 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             failOnDisplayError = true;
             if (destroyed) return;
             initialPhase = false;
+            epubDiag("OPEN_OK", `跳章恢复:第${step + 1}章`);
             return;
           }
         }
         // 多次校验仍为空白：按解析失败提示，避免无提示白屏
-        fail();
-      } catch {
-        fail();
+        fail("空白自检未通过:首章+跳章均判定无内容");
+      } catch (e) {
+        fail("异常抛出:" + ((e as { message?: string })?.message ?? String(e)));
       } finally {
         initialPhase = false;
         // 初始阶段收官：补一次 annotations 同步（早于打开完成的 marks 变更此刻生效；
@@ -1709,10 +1737,34 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   };
 
   if (failed) {
+    const diagText = getEpubDiagText();
     return (
       <section className="state state-epub active" aria-label="EPUB 解析失败">
         <div className="welcome">
           <span className="welcome-title">EPUB 解析失败，请确认文件未加密或损坏</span>
+          {failReason && <span className="epub-fail-reason">触发点：{failReason}</span>}
+          <button
+            type="button"
+            className="btn epub-diag-toggle"
+            onClick={() => setDiagOpen((v) => !v)}
+          >
+            {diagOpen ? "收起诊断日志" : "查看诊断日志"}
+          </button>
+          {diagOpen && (
+            <div className="epub-diag-box">
+              <pre>{diagText || "(无诊断记录)"}</pre>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  // 复制成功无需提示；失败时用户仍可在上方 <pre> 手动选择文本
+                  void navigator.clipboard?.writeText(diagText).catch(() => undefined);
+                }}
+              >
+                复制日志
+              </button>
+            </div>
+          )}
         </div>
       </section>
     );
