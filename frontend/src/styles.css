@@ -1635,6 +1635,11 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
 .marks-panel {
   width: 340px;
   flex: none;
+  /* D92：EPUB iframe 带 translateZ(0) 创建层叠上下文，且翻页时宽度可达数万像素，
+     其合成层会盖住右侧面板（表现为点了「标记」按钮 active 却看不到面板）。
+     与 mark-toolbar(1002)/bubble(1003) 同法提到最上层，确保面板可见可点。 */
+  position: relative;
+  z-index: 1004;
   border-left: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;

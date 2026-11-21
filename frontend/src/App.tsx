@@ -12,6 +12,7 @@ import MarksPanel from "./components/MarksPanel";
 import MarkNoteEditor from "./components/MarkNoteEditor";
 import type { MarksContext, AddMarkInput } from "./components/marksContext";
 import { toAppError, type AppError } from "./utils/appError";
+import { epubDiag } from "./utils/epubDiag";
 import {
   addCategory,
   loadCustomCategories,
@@ -666,7 +667,10 @@ export default function App() {
         markEnabled={settings.markEnabled}
         markOpen={showMarks}
         markCount={currentBookMarks.length}
-        onToggleMarks={() => setShowMarks((v) => !v)}
+        onToggleMarks={() => {
+          epubDiag("MARK_PANEL_TOGGLE", `open=${!showMarks} hasBook=${!!book}`);
+          setShowMarks((v) => !v);
+        }}
       />
       <ErrorBar error={error} onClose={() => setError(null)} />
       {/* v0.3.0：正文区 + 标记面板同行（面板 340px 固定在右侧） */}

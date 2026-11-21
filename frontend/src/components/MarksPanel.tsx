@@ -19,6 +19,7 @@ import {
   type Mark,
   type MarkColor,
 } from "../utils/marks";
+import { epubDiag } from "../utils/epubDiag";
 
 type Filter = "all" | "noted" | MarkColor;
 
@@ -110,6 +111,13 @@ export default function MarksPanel({
     if (f === "noted") return notedCount;
     return marks.filter((m) => m.color === f).length;
   };
+
+  // D92：面板挂载/卸载打点——确认「按钮 active 但面板看不到」是渲染问题还是层叠遮挡
+  useEffect(() => {
+    epubDiag("MARK_PANEL_MOUNT", `marks=${marks.length}`);
+    return () => epubDiag("MARK_PANEL_UNMOUNT", "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Esc 分层关闭（§4.22）：导出 → 清空确认 → 面板。捕获阶段拦截并
   // stopPropagation，避免 App 层阅读快捷键/设置面板同时响应；
