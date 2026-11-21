@@ -776,6 +776,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   // 目录镜像：闭包里读即时值（选区所在章名回填用）
   const tocRef = useRef<EpubNavItem[]>([]);
   tocRef.current = toc;
+  // D84：jump 后短时间内禁止 resize——跳章 display 会把 iframe 撑到整章展开宽度，
+  // 若此时 resize 会 clear 掉刚加载的正文并自愈回首章（表现为「跳章跳回第一章且空白」）。
+  const jumpResizeGuardRef = useRef(0);
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null);
   const [bubble, setBubble] = useState<{ mark: Mark; x: number; y: number } | null>(null);
   const jumpNonceRef = useRef(-1);
@@ -1733,6 +1736,12 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     const resizeWithRecovery = () => {
       const rendition = renditionRef.current;
       if (!rendition || destroyed) return;
+      // D84：jump 后的瞬态窗口内禁止 resize（跳章 display 必然撑宽 iframe，
+      // 此时 resize 会清掉刚加载的正文），真实窗口缩放发生在跳转间隙不受影响。
+      if (Date.now() < jumpResizeGuardRef.current) {
+        epubDiag("RESIZE_SKIP_JUMP", `guard=${jumpResizeGuardRef.current - Date.now()}ms`);
+        return;
+      }
       epubDiag("RESIZE_BEGIN", "resize->manager.clear()");
       try {
         rendition.resize("100%", "100%");
@@ -1812,7 +1821,19 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               epubDiag("RO_BASELINE", `${w}x${h}`);
               return;
             }
-            if (Math.abs(w - resizeBaseline.w) < 2 && Math.abs(h - resizeBaseline.h) < 2) {
+            // D84：jump 的 rendition.display() 会把 iframe 撑到整章展开宽度
+            // （paginated 实测 43764x723），container 的 RO 随之读到该宽度并触发
+            // resize→manager.clear()，刚加载的正文被清空；epubjs 自愈又回到首章
+            // （len=25，只剩标题）→「跳章跳回第一章且正文空白」。
+            // 真实容器宽度永远 ≤ 视口宽度，超过 viewport+200 即判为 display 中间态，
+            // 忽略且不污染 baseline（否则弹回的正常宽度又被误判为变化，二次 clear）。
+            const viewportW = window.innerWidth || 1920;
+            if (w > viewportW + 200) {
+              epubDiag("RO_IGNORE_EXPAND", `${w}x${h} viewport=${viewportW}`);
+              return;
+            }
+            // 滚动条出现/消失造成的微小高度抖动（<40px）也不算真实变化
+            if (Math.abs(w - resizeBaseline.w) < 2 && Math.abs(h - resizeBaseline.h) < 40) {
               return;
             }
             resizeBaseline = { w, h };
@@ -1849,6 +1870,8 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
   /** 侧栏点击 → 正文滚动到对应章节（sidebar → content） */
   const jump = (index: number, href: string) => {
+    // D84：跳章 display 会把 iframe 撑到整章展开宽度，1.2s 内禁止 resize 清除正文
+    jumpResizeGuardRef.current = Date.now() + 1200;
     activeRef.current = index;
     setActive(index);
     onChapterChange?.(toc[index]?.label ?? "");
