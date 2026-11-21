@@ -9,6 +9,7 @@ import { ALL_TAB, UNCLASSIFIED, allCategories, visibleCategories } from "../util
 import TextViewer from "./TextViewer";
 import PdfViewer from "./PdfViewer";
 import EpubViewer from "./EpubViewer";
+import type { TocContext } from "./MarksPanel";
 import type { MarksContext } from "./marksContext";
 
 type Props = {
@@ -46,6 +47,8 @@ type Props = {
   pdfView?: PdfViewHandlers;
   /** v0.3.0：标记记录上下文（透传给三 Viewer；缺失时纯阅读无标记） */
   marksCtx?: MarksContext;
+  /** D96：EPUB 目录树路径回传（App 收集后交给标记面板按章节组织） */
+  onTocContext?: (ctx: TocContext | null) => void;
 };
 
 const formatLabel: Record<string, string> = { epub: "EPUB", pdf: "PDF", txt: "TXT" };
@@ -81,6 +84,7 @@ export default function BookViewer({
   onOpenManager,
   pdfView,
   marksCtx,
+  onTocContext,
 }: Props) {
   // ===== v0.2.8 分类交互状态 =====
   // 卡片分类标签菜单：menuPath 为打开菜单的图书 path；newCatFor 为「就地新建分类」态
@@ -456,6 +460,7 @@ export default function BookViewer({
             getterRef={getterRef}
             onReady={handleReady}
             marksCtx={marksCtx}
+            onTocContext={onTocContext}
             onChapterChange={(title) =>
               onDetail(
                 title

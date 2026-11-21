@@ -154,7 +154,23 @@ type Props = {
   onReady?: () => void;
   /** v0.3.0 标记上下文（App 组装、BookViewer 透传）；缺失时纯阅读无标记 */
   marksCtx?: MarksContext;
+  /** D96：目录就绪后回传树路径，供标记面板按章节组织分组 */
+  onTocContext?: (ctx: TocContext | null) => void;
 };
+
+/**
+ * D96：目录树路径上下文（EpubViewer 产出 → 标记面板消费）。
+ * nodes[].order 是目录树索引路径，labels 是对应标签；面板据此判断层级与阅读顺序。
+ * 单一事实源：面板侧 `MarksPanel` 的 TocContext 由此扩展（附 currentLabels）。
+ */
+export type TocNode = {
+  href: string;
+  label: string;
+  depth: number;
+  order: number[];
+  labels: string[];
+};
+export type TocContext = { nodes: TocNode[] };
 
 // epubjs 打开/目录加载超时：损坏文件时 epubjs 的 opened 可能永久挂起
 // （既不 resolve 也不 reject，见 e2e/check_epubjs.cjs 实测），无超时则白屏无提示
@@ -163,6 +179,8 @@ const OPEN_TIMEOUT_MS = 10000;
 const SETTLE_MS = 700;
 // 首章渲染为空白的自动后移次数（商业书常见：首章为图片页/空壳页）
 const EMPTY_SECTION_RETRY = 1;
+/** D97：高亮悬停多久浮出感悟提示（毫秒）；过短会在划选/滚动时误弹 */
+const HOVER_DELAY_MS = 320;
 
 /**
  * v0.3.0 标记：annotations.add 的 type（与 remove 成对；epub.js 7943 行
@@ -296,6 +314,27 @@ function flattenToc(items: EpubNavItem[], output: EpubNavItem[] = [], depth = 0)
     if (item.subitems?.length) flattenToc(item.subitems, output, depth + 1);
   }
   return output;
+}
+
+/**
+ * 扁平化目录并记录每个项的「树路径」（D96：标记按章节显示用）。
+ * order = 各级祖先在其兄弟数组中的下标；labels = 对应标签。
+ * 与 flattenToc 分开实现：flattenToc 为既有行为（目录侧栏 + tocTargets）不动，
+ * 避免为新增的面板分组需求改动已验证的目录/跳转链路。
+ */
+export function tocNodesWithPath(
+  items: EpubNavItem[],
+  prefix: number[] = [],
+  labels: string[] = [],
+  out: Array<{ href: string; label: string; depth: number; order: number[]; labels: string[] }> = []
+): Array<{ href: string; label: string; depth: number; order: number[]; labels: string[] }> {
+  items.forEach((item, i) => {
+    const order = [...prefix, i];
+    const path = [...labels, item.label];
+    out.push({ href: item.href, label: item.label, depth: order.length - 1, order, labels: path });
+    if (item.subitems?.length) tocNodesWithPath(item.subitems, order, path, out);
+  });
+  return out;
 }
 
 /** 标题文本判定为「子级小节」的启发式（D90/D91） */
@@ -551,13 +590,37 @@ function bindStageMarks(
     onDragSelect: (doc: Document, range: Range) => void;
     onMarkHit: (id: string) => void;
     onPress: () => void;
+    /** D97：悬停命中的标记 id（null = 未命中），用于浮出感悟提示 */
+    onHover: (id: string | null, clientX: number, clientY: number) => void;
   }
 ): () => void {
   let down: { x: number; y: number } | null = null;
   const cleanups: (() => void)[] = [];
 
+  const onMove = (ev: MouseEvent) => {
+    // 拖拽选词过程中不弹悬停提示（会把工具条位置挤乱）
+    if (down) return;
+    // 提示显示在光标下方，鼠标移入提示时必然先经过「未命中高亮」的空白区域。
+    // 若此时直接 cancel，提示会在鼠标接近的瞬间消失（永远点不进去）。
+    // 因此：已有提示时，鼠标落在提示矩形内 → 保持；否则交给 scheduleHover 判定。
+    const tipEl = stage.querySelector<HTMLElement>(".mark-hovertip");
+    if (tipEl) {
+      const tr = tipEl.getBoundingClientRect();
+      const inTip =
+        ev.clientX >= tr.left && ev.clientX <= tr.right &&
+        ev.clientY >= tr.top && ev.clientY <= tr.bottom;
+      if (inTip) return;
+    }
+    const g = findMarkElAt(stage, ev.clientX, ev.clientY);
+    handlers.onHover(g?.getAttribute("data-id") ?? null, ev.clientX, ev.clientY);
+  };
+
+  // 鼠标离开正文区：收起悬停提示，避免提示孤留
+  const onLeave = () => handlers.onHover(null, 0, 0);
+
   const onDown = (ev: MouseEvent) => {
     handlers.onPress(); // 新一次按下：消散上一轮工具条/气泡
+    handlers.onHover(null, ev.clientX, ev.clientY); // D97：按下即收起悬停提示
     down = null;
     if (ev.button !== 0) return;
     const t = ev.target as HTMLElement | null;
@@ -612,8 +675,12 @@ function bindStageMarks(
 
   stage.addEventListener("mousedown", onDown);
   stage.addEventListener("mouseup", onUp);
+  stage.addEventListener("mousemove", onMove);
+  stage.addEventListener("mouseleave", onLeave);
   cleanups.push(() => stage.removeEventListener("mousedown", onDown));
   cleanups.push(() => stage.removeEventListener("mouseup", onUp));
+  cleanups.push(() => stage.removeEventListener("mousemove", onMove));
+  cleanups.push(() => stage.removeEventListener("mouseleave", onLeave));
   return () => cleanups.forEach((fn) => fn());
 }
 
@@ -759,7 +826,7 @@ function createSectionNav(contentSectionIndexes: Set<number>, spine: EpubSpine):
   };
 }
 
-export default function EpubViewer({ dataBase64, settings, mode, onChapterChange, resume, getterRef, onReady, marksCtx }: Props) {
+export default function EpubViewer({ dataBase64, settings, mode, onChapterChange, resume, getterRef, onReady, marksCtx, onTocContext }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement | null>(null); // 翻页 section：mousemove 监听挂这里（祖先，覆盖内容区与按钮组）
   const bookRef = useRef<EpubBook | null>(null);
@@ -775,6 +842,8 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   // 当前阅读点 CFI（两模式 relocated 实时更新）；优先于 href+ratio 用于精确还原
   const currentCfiRef = useRef<string>("");
   const [toc, setToc] = useState<EpubNavItem[]>([]);
+  // D96：目录树路径（面板按章节组织标记用）；null 表示无目录，面板退化为平铺分组
+  const [tocContext, setTocContext] = useState<TocContext | null>(null);
   const [active, setActive] = useState(0);
   const [failed, setFailed] = useState(false);
   // 失败原因码（D79）：失败页展示当前触发点，配合完整诊断文本可定位
@@ -788,6 +857,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   // 初始渲染完成回调经 ref：同上，避免引用变化触发 effect 重跑
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
+  // D96：目录路径回传经 ref，理由同上（父组件每次渲染都给新引用）
+  const onTocContextRef = useRef(onTocContext);
+  onTocContextRef.current = onTocContext;
   // 初始位置一次性消费：恢复完成后置 null，防止重复恢复
   const resumeRef = useRef(resume);
   // 组件内诊断信息经 ref 输出到控制台，避免污染状态栏/触发重渲染
@@ -821,6 +893,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   const jumpResizeGuardRef = useRef(0);
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null);
   const [bubble, setBubble] = useState<{ mark: Mark; x: number; y: number } | null>(null);
+  // D97：悬停提示——高亮上停留即浮出感悟摘要（只读），点开仍是完整气泡（可编辑/删除）
+  const [hoverTip, setHoverTip] = useState<{ mark: Mark; x: number; y: number } | null>(null);
+  const hoverTimerRef = useRef<number | null>(null);
+  const hoverIdRef = useRef<string | null>(null);
   const jumpNonceRef = useRef(-1);
 
   /** 清掉 iframe 内的程序化选区（宿主文档无选区可清；标记落库后调用） */
@@ -911,8 +987,21 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     });
   };
 
+  // ===== D97：悬停显示感悟 =====
+  /** 取消待触发的悬停计时与已显示的提示 */
+  const cancelHover = () => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    hoverIdRef.current = null;
+    setHoverTip(null);
+  };
+
   /** 高亮点击 → 气泡（§4.5）：scroll 由 stage 命中测试调入；page 由 markClicked 调入 */
   const showBubble = (m: Mark) => {
+    // D97：点击时收起悬停提示，避免两层浮层叠在一起
+    cancelHover();
     const host = sectionRef.current;
     const hostRect = host?.getBoundingClientRect();
     const g = findMarkElById(containerRef.current, m.id);
@@ -926,6 +1015,41 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
       x: Math.min(Math.max(r.left - hostRect.left, 8), Math.max(8, hostRect.width - 268)),
       y: r.bottom - hostRect.top + 6,
     });
+  };
+
+  /**
+   * 悬停计时：命中高亮且稳定停留 HOVER_DELAY_MS 才浮出，避免移动鼠标时满屏闪烁。
+   * 只显示「有感悟」的标记——纯高亮悬停无信息可显示，反而遮挡正文。
+   */
+  const scheduleHover = (id: string | null, clientX: number, clientY: number) => {
+    if (!id) {
+      // 移到别处：清掉上一个，等待新的
+      if (hoverIdRef.current !== null || hoverTip) cancelHover();
+      return;
+    }
+    if (hoverIdRef.current === id) return; // 同一高亮的提示已在显示：保持
+    // 注意：这里不提前写 hoverIdRef——只有真的弹出提示才记 id。
+    // 否则「无感悟的高亮」会把 id 占住，之后再悬停同一处不会再尝试。
+    cancelHover();
+    hoverTimerRef.current = window.setTimeout(() => {
+      hoverTimerRef.current = null;
+      const m = marksCtxRef.current?.marks.find((x) => x.id === id);
+      if (!m || !m.note) return;
+      const host = sectionRef.current;
+      const hostRect = host?.getBoundingClientRect();
+      if (!hostRect) return;
+      const g = findMarkElById(containerRef.current, id);
+      const r = g?.getBoundingClientRect();
+      const anchorX = r && r.width > 0 ? r.left : clientX;
+      const anchorY = r && r.height > 0 ? r.bottom : clientY;
+      hoverIdRef.current = id;
+      epubDiag("HOVER_TIP", `id=${id}`);
+      setHoverTip({
+        mark: m,
+        x: Math.min(Math.max(anchorX - hostRect.left, 8), Math.max(8, hostRect.width - 300)),
+        y: anchorY - hostRect.top + 8,
+      });
+    }, HOVER_DELAY_MS);
   };
 
   /**
@@ -1233,6 +1357,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         const nav = await withTimeout(book.loaded.navigation, OPEN_TIMEOUT_MS);
         epubDiag("NAV_LOADED", `toc=${nav.toc?.length ?? 0}`);
         if (destroyed) return;
+        // D96：同时保留树路径（面板按章节组织用）——用 nav.toc 原始嵌套，而非推断后的扁平表
+        const nodes = tocNodesWithPath(nav.toc ?? []);
+        setTocContext(nodes.length ? { nodes } : null);
+        onTocContextRef.current?.(nodes.length ? { nodes } : null);
         const items = inferTocDepths(flattenToc(nav.toc ?? []));
         setToc(items);
 
@@ -1334,6 +1462,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
                 setToolbar(null);
                 setBubble(null);
               },
+              onHover: scheduleHover,
               onDragSelect: (doc, range) => {
                 // cfi 由所在视图的 Contents 反算（epub.js 6571）
                 const contents = renditionRef.current?.views?.().find((v) => {
@@ -2095,6 +2224,27 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           onCopy={onToolbarCopy}
           onDelete={onToolbarDelete}
         />
+      )}
+      {hoverTip && (
+        <div
+          className="mark-hovertip"
+          style={{ left: hoverTip.x, top: hoverTip.y }}
+          role="tooltip"
+          onMouseEnter={() => {
+            // 鼠标移入提示本身时不收起（允许悬停阅读长感悟）
+            if (hoverTimerRef.current !== null) {
+              window.clearTimeout(hoverTimerRef.current);
+              hoverTimerRef.current = null;
+            }
+          }}
+          onMouseLeave={cancelHover}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="mh-note">{hoverTip.mark.note}</div>
+          <div className="mh-foot">
+            <span className="mh-hint">点击可编辑</span>
+          </div>
+        </div>
       )}
       {bubble && (
         <div

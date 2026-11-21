@@ -1598,6 +1598,40 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
 }
 .mark-bubble .mb-acts { display: flex; gap: 6px; justify-content: flex-end; }
 
+/* ===== D97：高亮悬停提示（只读感悟摘要） ===== */
+/* 层级低于气泡 1003：点击后气泡盖住提示，两者不叠 */
+.mark-hovertip {
+  position: absolute;
+  z-index: 1001;
+  width: 292px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  pointer-events: auto;
+  animation: markHoverIn .12s ease both;
+}
+.mh-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+.mh-foot { margin-top: 6px; display: flex; justify-content: flex-end; }
+.mh-hint { font-size: 10px; color: var(--text-3); }
+@keyframes markHoverIn {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ===== 工具栏「标记」入口（含徽标） ===== */
 .mark-entry {
   position: relative;
@@ -1712,6 +1746,38 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
 }
 .mp-group .gc { font-variant-numeric: tabular-nums; }
 .mp-group.idea { color: var(--accent); }
+/* ===== D96：标记按章节组织 ===== */
+/* 子节分组缩进，与目录侧栏的层级视觉一致（.toc-depth-1 缩进 32px） */
+.mp-group.mp-depth-1 { padding-left: 26px; }
+.mp-group.mp-depth-2 { padding-left: 38px; }
+/* 父章节标题加重，缩进后仍能看出「这是上层」 */
+.mp-group.mp-depth-0 .gname { font-weight: 600; color: var(--text-2); }
+.mp-group .gname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.mp-group .gcur {
+  flex: none;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--active-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* 面包屑：让子节也能看出归属哪一章（父章名过长时省略） */
+.mp-group .gpath {
+  flex: none;
+  max-width: 45%;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: .75;
+}
 .mark-item {
   position: relative;
   display: flex;

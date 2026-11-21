@@ -14,6 +14,8 @@ import {
   loadMarks,
   markDisplayText,
   markGroup,
+  markChapterPaths,
+  sortChapterGroups,
   normalizeMark,
   removeMark,
   removeMarks,
@@ -561,5 +563,65 @@ describe("marks v1：导出 Markdown（F37）", () => {
       mk("1", { text: "引文", locator: { kind: "epub", cfi: "c", href: "h", chapter: "第三章" }, updatedAt: T - 400 }),
     ]);
     expect(md).toContain("*位置：第三章 · 6 分钟前*");
+  });
+});
+
+describe("D96：标记按章节组织", () => {
+  const nodes = [
+    { href: "p1.html", label: "Part 1", depth: 0, order: [0], labels: ["Part 1"] },
+    { href: "s1.html", label: "Story One", depth: 1, order: [0, 0], labels: ["Part 1", "Story One"] },
+    { href: "p2.html", label: "Part 2", depth: 0, order: [1], labels: ["Part 2"] },
+    { href: "s2.html", label: "Story Two", depth: 1, order: [1, 0], labels: ["Part 2", "Story Two"] },
+  ];
+
+  const epubMark = (id: string, chapter: string): Mark => ({
+    id,
+    bookPath: BOOK,
+    color: "yellow",
+    text: "原文",
+    note: "",
+    locator: { kind: "epub", cfi: "epubcfi(/6/2)", href: "s1.html", chapter },
+    createdAt: 1,
+    updatedAt: 1,
+  });
+
+  it("按标签精确匹配反查章节路径", () => {
+    const paths = markChapterPaths([epubMark("a", "Story Two")], nodes);
+    expect(paths.get("a")).toEqual({
+      key: "s2.html",
+      order: [1, 0],
+      labels: ["Part 2", "Story Two"],
+      href: "s2.html",
+    });
+  });
+
+  it("标签不匹配时不猜：返回空映射（面板落「由 markGroup 决定的分组」）", () => {
+    const paths = markChapterPaths([epubMark("a", "不存在的章")], nodes);
+    expect(paths.size).toBe(0);
+  });
+
+  it("独立想法与 TXT/PDF 不参与章节路径（无原文可归章）", () => {
+    const idea: Mark = { ...epubMark("i", "Story One"), idea: true };
+    const txt: Mark = { ...epubMark("t", "Story One"), locator: { kind: "txt", start: 0, end: 3 } };
+    expect(markChapterPaths([idea, txt], nodes).size).toBe(0);
+  });
+
+  it("分组按目录阅读顺序排序，父章在子节之前", () => {
+    const sorted = sortChapterGroups([
+      { name: "Story Two", order: [1, 0], items: [] },
+      { name: "Part 1", order: [0], items: [] },
+      { name: "Story One", order: [0, 0], items: [] },
+    ]);
+    expect(sorted.map((g) => g.name)).toEqual(["Part 1", "Story One", "Story Two"]);
+  });
+
+  it("无路径的分组（想法/未归类）殿后并保持相对顺序", () => {
+    const sorted = sortChapterGroups([
+      { name: "想法", order: null, items: [] },
+      { name: "Story Two", order: [1, 0], items: [] },
+      { name: "未归类", order: null, items: [] },
+      { name: "Part 1", order: [0], items: [] },
+    ]);
+    expect(sorted.map((g) => g.name)).toEqual(["Part 1", "Story Two", "想法", "未归类"]);
   });
 });

@@ -15,13 +15,23 @@ import {
   MARK_COLOR_LABELS,
   exportMarksMarkdown,
   formatMarkTime,
+  markChapterPaths,
   markGroup,
+  sortChapterGroups,
   type Mark,
+  type MarkChapterPath,
   type MarkColor,
 } from "../utils/marks";
 import { epubDiag } from "../utils/epubDiag";
+import type { TocContext as EpubTocContext } from "./EpubViewer";
 
 type Filter = "all" | "noted" | MarkColor;
+
+/**
+ * 目录层级上下文（D96）：由 EpubViewer 产出（TocContext）后，App 附上 currentLabels
+ * 再交给面板。currentLabels 是当前阅读章在树中的路径，用于「当前章」标识。
+ */
+export type TocContext = EpubTocContext & { currentLabels?: string[] };
 
 type Props = {
   /** 书架条目名（去扩展名）：导出标题/文件名与清空确认展示 */
@@ -30,6 +40,8 @@ type Props = {
   marks: Mark[];
   /** 全部标记（导出「全部图书」范围） */
   allMarks: Mark[];
+  /** 目录层级上下文（D96）：有则按章节树组织分组，无则退化为平铺分组 */
+  tocCtx?: TocContext | null;
   onClose: () => void;
   /** 跳转定位：Viewer 负责滚动 + 闪烁 1.6s；跳转后面板保持打开（§4.16） */
   onJump: (m: Mark) => void;
@@ -62,6 +74,7 @@ export default function MarksPanel({
   bookName,
   marks,
   allMarks,
+  tocCtx,
   onClose,
   onJump,
   onEdit,
@@ -93,7 +106,8 @@ export default function MarksPanel({
     });
   }, [sorted, query, filter]);
 
-  // 分组：首次出现顺序，「想法」组置顶（HTML 基线口径）
+  // 分组（D96）：按章节组织——先按 markGroup 归类，再用目录树反查阅读顺序。
+  // 有 tocCtx 时组内按目录顺序排列（父章在前、子节紧随）；无则退化为首次出现顺序。
   const groups = useMemo(() => {
     const map = new Map<string, Mark[]>();
     for (const m of filtered) {
@@ -102,8 +116,14 @@ export default function MarksPanel({
       if (arr) arr.push(m);
       else map.set(g, [m]);
     }
-    return [...map.entries()].sort(([a], [b]) => (a === "想法" ? -1 : b === "想法" ? 1 : 0));
-  }, [filtered]);
+    const paths: Map<string, MarkChapterPath> | null = tocCtx?.nodes.length
+      ? markChapterPaths(filtered, tocCtx.nodes)
+      : null;
+    const list = [...map.entries()].map(([name, items]) => {
+      const path = paths ? items.map((m) => paths.get(m.id)).find(Boolean) ?? null : null;
+      return { name, order: path?.order ?? null, labels: path?.labels ?? null, items };
+    });
+    return sortChapterGroups(list);  }, [filtered, tocCtx]);
 
   const notedCount = useMemo(() => marks.filter((m) => !!m.note).length, [marks]);
   const chipCount = (f: Filter): number => {
@@ -304,97 +324,115 @@ export default function MarksPanel({
             <div>无匹配标记</div>
           </div>
         ) : (
-          groups.map(([group, items]) => (
-            <div key={group}>
-              <div className={"mp-group" + (group === "想法" ? " idea" : "")}>
-                {group === "想法" ? "◆ 想法" : group} <span className="gc">{items.length}</span>
-              </div>
-              {items.map((m) => (
-                <div className="mark-item" key={m.id}>
-                  <span className={"bar bar-" + m.color} />
-                  <div
-                    className="body"
-                    role="button"
-                    tabIndex={0}
-                    title="跳转到原文"
-                    onClick={() => onJump(m)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") onJump(m);
-                    }}
-                  >
-                    <div className={"mi-text" + (m.idea ? " idea" : "")}>{itemText(m)}</div>
-                    {m.note && <div className="mi-note">{m.note}</div>}
-                    <div className="mi-meta">
-                      <span>{formatMarkTime(m.updatedAt)}</span>
-                      {metaPos(m) && (
-                        <>
-                          <span>·</span>
-                          <span>{metaPos(m)}</span>
-                        </>
-                      )}
+          groups.map(({ name, order, labels, items }) => {
+            // D96：层级深度决定缩进；路径长度 >1 显示父章面包屑（父章只有 1 个标记时
+            // 才合并展示，避免「父章空标题 + 子节各一组」的视觉噪音）
+            const depth = order ? Math.max(0, order.length - 1) : 0;
+            const isIdea = name === "想法";
+            const parent = labels && labels.length > 1 ? labels.slice(0, -1).join(" › ") : null;
+            const leaf = labels?.[labels.length - 1];
+            const curLeaf = tocCtx?.currentLabels?.[tocCtx.currentLabels.length - 1];
+            const isCurrent = !!leaf && !!curLeaf && leaf === curLeaf;
+            return (
+              <div key={name}>
+                <div
+                  className={
+                    "mp-group" + (isIdea ? " idea" : "") + " mp-depth-" + Math.min(2, depth)
+                  }
+                  title={labels?.join(" › ") ?? name}
+                >
+                  <span className="gname">{name}</span>
+                  <span className="gc">{items.length}</span>
+                  {isCurrent && <span className="gcur">当前章</span>}
+                  {parent && <span className="gpath">{parent}</span>}
+                </div>
+                {items.map((m) => (
+                  <div className="mark-item" key={m.id}>
+                    <span className={"bar bar-" + m.color} />
+                    <div
+                      className="body"
+                      role="button"
+                      tabIndex={0}
+                      title="跳转到原文"
+                      onClick={() => onJump(m)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") onJump(m);
+                      }}
+                    >
+                      <div className={"mi-text" + (m.idea ? " idea" : "")}>{itemText(m)}</div>
+                      {m.note && <div className="mi-note">{m.note}</div>}
+                      <div className="mi-meta">
+                        <span>{formatMarkTime(m.updatedAt)}</span>
+                        {metaPos(m) && (
+                          <>
+                            <span>·</span>
+                            <span>{metaPos(m)}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="mi-more"
-                    title="更多"
-                    aria-label={"更多操作：" + itemText(m)}
-                    onClick={() => setMenuFor(menuFor === m.id ? null : m.id)}
-                  >
-                    ⋯
-                  </button>
-                  {menuFor === m.id && (
-                    <div className="cat-menu" role="menu" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="menu-item"
-                        onClick={() => {
-                          setMenuFor(null);
-                          onJump(m);
-                        }}
-                      >
-                        跳转到原文
-                      </button>
-                      <button
-                        type="button"
-                        className="menu-item"
-                        onClick={() => {
-                          setMenuFor(null);
-                          onEdit(m);
-                        }}
-                      >
-                        编辑
-                      </button>
-                      {m.text && (
+                    <button
+                      type="button"
+                      className="mi-more"
+                      title="更多"
+                      aria-label={"更多操作：" + itemText(m)}
+                      onClick={() => setMenuFor(menuFor === m.id ? null : m.id)}
+                    >
+                      ⋯
+                    </button>
+                    {menuFor === m.id && (
+                      <div className="cat-menu" role="menu" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           className="menu-item"
                           onClick={() => {
                             setMenuFor(null);
-                            copyText(m.text)
-                              .then(() => onToast("已复制原文"))
-                              .catch(() => onToast("复制失败：请检查浏览器权限"));
+                            onJump(m);
                           }}
                         >
-                          复制原文
+                          跳转到原文
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        className="menu-item danger"
-                        onClick={() => {
-                          setMenuFor(null);
-                          onDelete(m.id);
-                        }}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ))
+                        <button
+                          type="button"
+                          className="menu-item"
+                          onClick={() => {
+                            setMenuFor(null);
+                            onEdit(m);
+                          }}
+                        >
+                          编辑
+                        </button>
+                        {m.text && (
+                          <button
+                            type="button"
+                            className="menu-item"
+                            onClick={() => {
+                              setMenuFor(null);
+                              copyText(m.text)
+                                .then(() => onToast("已复制原文"))
+                                .catch(() => onToast("复制失败：请检查浏览器权限"));
+                            }}
+                          >
+                            复制原文
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="menu-item danger"
+                          onClick={() => {
+                            setMenuFor(null);
+                            onDelete(m.id);
+                          }}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })
         )}
       </div>
 

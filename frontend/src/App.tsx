@@ -8,7 +8,7 @@ import BookViewer from "./components/BookViewer";
 import StatusBar from "./components/StatusBar";
 import SettingsPanel from "./components/SettingsPanel";
 import ShelfManager from "./components/ShelfManager";
-import MarksPanel from "./components/MarksPanel";
+import MarksPanel, { type TocContext } from "./components/MarksPanel";
 import MarkNoteEditor from "./components/MarkNoteEditor";
 import type { MarksContext, AddMarkInput } from "./components/marksContext";
 import { toAppError, type AppError } from "./utils/appError";
@@ -92,6 +92,9 @@ export default function App() {
   const [marks, setMarks] = useState<Mark[]>(() => loadMarks());
   // 面板开关（工具栏按钮 / Ctrl+M / Esc 由面板自理）
   const [showMarks, setShowMarks] = useState(false);
+  // D96：EPUB 目录树路径（由 EpubViewer 回传），供标记面板按章节组织分组。
+  // 仅当前书为 EPUB 时有值；切书/关闭时由 BookViewer 卸载清空。
+  const [tocCtx, setTocCtx] = useState<TocContext | null>(null);
   // 跳转目标：面板点条目置入；nonce 防同一条目重复触发
   const [markJump, setMarkJump] = useState<{ mark: Mark; nonce: number } | null>(null);
   // 感悟编辑器：new = 新建（划词/写想法，locator 由调用方给出）；
@@ -536,6 +539,11 @@ export default function App() {
     if (!book) setShowMarks(false);
   }, [book]);
 
+  // D96：切书/换格式时清空目录上下文——避免上一本书的目录把新书标记归错章节
+  useEffect(() => {
+    setTocCtx(null);
+  }, [book?.path, book?.format]);
+
   // v0.2.8：图书归类；cat 为空串表示「未分类」
   const handleAssignCategory = useCallback((path: string, cat: string) => {
     setEntryCategory(path, cat.trim() ? cat.trim() : undefined);
@@ -695,6 +703,7 @@ export default function App() {
           onOpenManager={() => setShowShelfManager(true)}
           pdfView={pdfView}
           marksCtx={marksCtx}
+          onTocContext={setTocCtx}
         />
         {showMarks && book && (
           <>
@@ -704,6 +713,7 @@ export default function App() {
               bookName={book.name.replace(/\.[^.]+$/, "")}
               marks={currentBookMarks}
               allMarks={marks}
+              tocCtx={tocCtx}
               onClose={() => setShowMarks(false)}
               onJump={handleMarkJump}
               onEdit={marksCtx.onEdit}

@@ -273,6 +273,67 @@ export function markGroup(m: Mark): string {
   return "全文";
 }
 
+/** 章节路径（D96）：EPUB 侧记录的「父章 › 子节」阅读顺序路径；其它格式无层级 */
+export type MarkChapterPath = {
+  key: string; // href#fragment（与 toc 定位同源，用于排序匹配）
+  order: number[]; // 目录树索引路径，如 [3, 1]
+  labels: string[]; // 对应标签，如 ["Part 1", "A Study in Scarlet"]
+  href: string;
+};
+
+/**
+ * 按目录树给标记反查章节路径（D96「按章节显示」）。
+ *
+ * 只认 `locator.chapter` 与目录标签的精确匹配——不做模糊猜（宁可落到「未归类」），
+ * 因为错归档比不归档更误导。同一标签可能出现在多个目录项（合集名重复），
+ * 取第一个匹配（目录顺序即阅读顺序）。
+ *
+ * @param marks 待标注的标记（顺序即调用方给的分组顺序）
+ * @param nodes 扁平化目录项（含 depth / order / labels）
+ * @returns 每条标记对应的章节路径；非 EPUB 或无匹配返回 null
+ */
+export function markChapterPaths(
+  marks: Mark[],
+  nodes: ReadonlyArray<{ href: string; label: string; depth: number; order: number[]; labels: string[] }>
+): Map<string, MarkChapterPath> {
+  const byLabel = new Map<string, (typeof nodes)[number]>();
+  for (const n of nodes) if (!byLabel.has(n.label)) byLabel.set(n.label, n);
+  const out = new Map<string, MarkChapterPath>();
+  for (const m of marks) {
+    if (m.locator.kind !== "epub" || m.idea) continue;
+    const hit = byLabel.get(m.locator.chapter);
+    if (!hit) continue;
+    out.set(m.id, {
+      key: hit.href,
+      order: hit.order,
+      labels: hit.labels,
+      href: hit.href,
+    });
+  }
+  return out;
+}
+
+/**
+ * 章节分组排序（D96）：按目录阅读顺序（order 字典序）而非首次出现顺序。
+ * 没有路径的分组（「想法」「未归类」「第 N 页」「全文」）保持调用方给定顺序并殿后。
+ */
+export function sortChapterGroups<G extends { order: number[] | null }>(
+  groups: G[]
+): G[] {
+  return [...groups].sort((a, b) => {
+    if (!a.order && !b.order) return 0;
+    if (!a.order) return 1;
+    if (!b.order) return -1;
+    const len = Math.max(a.order.length, b.order.length);
+    for (let i = 0; i < len; i++) {
+      const x = a.order[i] ?? -1;
+      const y = b.order[i] ?? -1;
+      if (x !== y) return x - y;
+    }
+    return 0;
+  });
+}
+
 /** 条目显示用原文（独立想法返回空串，由 UI 决定占位文案） */
 export function markDisplayText(m: Mark): string {
   return m.text;
