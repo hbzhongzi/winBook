@@ -56,6 +56,7 @@ import {
   type Mark,
   type MarkColor,
   type MarkLocator,
+  type PdfStroke,
 } from "./utils/marks";
 
 type Book = main.BookData;
@@ -597,6 +598,8 @@ export default function App() {
         return m;
       },
       onUpdate: (id: string, patch: { color?: MarkColor }) => updateMark(id, patch),
+      // D101：画笔笔迹替换（整组覆盖，避免逐笔增删产生中间态）
+      onReplaceInk: (id: string, strokes: PdfStroke[]) => updateMark(id, { strokes }),
       onNoteNew: (info: { quote: string; locator: MarkLocator; idea?: boolean }) =>
         setNoteEdit({ mode: "new", quote: info.quote, idea: info.idea, locator: info.locator }),
       onEdit: (m: Mark) => setNoteEdit({ mode: "edit", mark: m }),

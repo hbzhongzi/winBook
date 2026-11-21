@@ -1,8 +1,8 @@
 # BookEditor v0.3.0 —— 标记记录模块 开发方案
 
-> 状态：**T1–T12 实施完成 + D76–D100 真机反馈修复与体验增强**（2026-11-21）。
-> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
-> 验证：`tsc --noEmit` PASS；`vitest run` **227 例全绿**（marks 50 例，含 D76/D77 回归 2 例与 D96 章节组织 5 例；settings 补 6 例；D100 新增 `markDrag.test.ts` 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D100.exe`）。A83–A97 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。**D89 翻页划词工具条、D95 弹窗视觉、D98 悬停/右键、D100 双模式悬停与滚动选词，均待用户真机确认后方可标为通过。**
+> 状态：**T1–T12 实施完成 + D76–D101 真机反馈修复与体验增强**（2026-11-21）。
+> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`，D100 = `13a4ab3`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
+> 验证：`tsc --noEmit` PASS；`vitest run` **256 例全绿**（marks 58 例，含 D76/D77 回归 2 例、D96 章节组织 5 例、D101 画笔数据 8 例；新增 `pdfInk.test.ts` 21 例覆盖坐标缩放/采样/抽稀/橡皮擦命中/页内位置；`markDrag.test.ts` 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D101.exe`）。A83–A98 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。**D89 翻页划词工具条、D95 弹窗视觉、D98 悬停/右键、D100 双模式悬停与滚动选词、D101 PDF 画笔，均待用户真机确认后方可标为通过。**
 > 取证通道：D87 起 EPUB 诊断自动节流落盘到 exe 同目录 `epub-diag.log`（`utils/epubDiag.ts` + Go `DiagLogPath()`/`WriteDiagLog()`），不再依赖点按钮；D76–D95 全部修复均据该日志定位。
 > 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互；**§4.11 面板形态已由 D95 改为弹窗浮层，HTML 基线此点未同步更新**）。
 > 上游版本：v0.2.9（PDF 显示优化，A67–A74 待真机）。本版以在三个 Viewer 内挂载划词监听与高亮渲染为主：TXT 渲染层按 D68 改片段数组，PDF 按 D73 退化为页级，Go 侧零改动。
@@ -83,9 +83,9 @@ export const TOTAL_LIMIT = 2000;                  // 总上限
 |---|---|---|---|---|
 | EPUB | 宿主 `stage` mouseup → 遍历 iframe `contentDocument` 取 `getSelection()` → **CFI**（epubjs 0.3.93 range→CFI 实测可用） | `{cfi, href, chapter}` | `rendition.annotations.add(type, cfi, {id}, cb, "mark-hl mark-hl-*", fill)` 增量 diff；未渲染章节经 `hooks.render.inject` 补挂 | `rendition.display(cfi)`（resume 已在用；href 亦可，作降级） |
 | TXT | 宿主 `getSelection()` → TreeWalker 累计字符偏移（与现有 anchor 口径同源） | `{start, end}`（字号无关） | 渲染层按偏移拆 `<mark data-mark-id>` 片段 | `scrollTo` 对应片段元素 + 闪烁 |
-| PDF | **无划词**（D73：纯 canvas 渲染，无 textLayer）；页级「标记本页」悬浮按钮 | `{page, quote: ""}`（quote 本版恒空） | 无页内高亮；按钮 active 态表示当前页已有标记 | 页码翻页（单页）/ 页槽置顶（滚动，复用初始恢复重钉）+ 页级闪烁 1.6s |
+| PDF | **无划词**（纯 canvas 渲染，无 textLayer）。**D101 画笔**：高亮笔 / 自由笔 / 橡皮擦，叠一层透明 canvas 手写圈画（翻页 + 滚动双模式） | `{page, quote: "", strokes?: PdfStroke[]}`（strokes 每条含 points/baseW/baseH/top） | 画笔层 canvas 回放笔迹（按 `当前尺寸/baseW` 等比缩放）；「标记本页」按钮 active 态表示当前页已有标记 | 页码翻页（单页）/ 页槽置顶（滚动，复用初始恢复重钉）+ 页级闪烁 1.6s |
 
-- **PDF 能力边界（D65→D73）**：PdfViewer 为纯 canvas 渲染（无 pdfjs textLayer），页内 quote 重匹配高亮本版不做（in-text 高亮列后续候选）；标记退化为「页级」——text 空、非 idea、定位器只记页码，面板按「第 N 页」分组、导出含位置脚注。跨页/扫描版 PDF 同样只落侧栏页级条目。
+- **PDF 能力边界（D65→D73→D101）**：PdfViewer 为纯 canvas 渲染（无 pdfjs textLayer），页内 quote 重匹配高亮本版不做。**D73** 时标记退化为「页级书签」；**D101 补齐页内标记**——不做文字层划词，改为**画笔手写标注**（用户明确选择「类似画笔那种可以自由作画标记」），既绕开 textLayer 的对齐/虚拟化复杂度，又能覆盖扫描版 PDF。两条能力并存：书签记「读到这页」，画笔记「这里有内容」。跨页/扫描版 PDF 均可正常涂画。
 - **EPUB annotations 结论（D67）**：`rendition.annotations` 在纵向 scroll（窗口化滚动）模式下经 `hooks.render.inject` 在视图渲染时补挂，高亮不丢，**无需降级**；增量 diff（remove+add）处理新增/换色/删除，想法/空原文条目不挂高亮（collapsed CFI 无可见区域，面板条目照常可跳转）。
 
 ### 3.3 设置扩展（`utils/settings.ts`）
@@ -158,7 +158,10 @@ markDefaultColor: MarkColor;
 | `frontend/src/components/MarksPanel.tsx` | **新增**：抽屉（头部/工具行/分组列表/条目/更多菜单/底部行/空态）+ 清空二次确认 + 导出弹层 |
 | `frontend/src/components/TextViewer.tsx` | 渲染层按 marks 偏移拆 `<mark>` 片段；划词监听（mouseup + 偏移计算）；跳转 `scrollIntoView` + flash |
 | `frontend/src/components/EpubViewer.tsx` | 宿主 `stage` mouseup 监听（遍历 iframe contentDocument 取选词，工具条/气泡在宿主 DOM）+ annotations 增量同步（未渲染章节经 `hooks.render.inject` 补挂）；`display(cfi)` 跳转 + 高亮闪烁（两级延迟重试等补挂）。**实施期 D76–D95 大改**：诊断打点、首次 display 前 patch continuous `fill/check`（D80）、DOM 探针 + 空白自愈（D81）、浮动诊断按钮（D82）、resize 基线/恢复（D83）、虚假膨胀过滤 + jump guard（D84）、空壳扉页判定（D85/D86）、像素 resize（D88）、交互打点（D89/D90）、平铺目录层级推断（D90/D91），详见 §7 |
-| `frontend/src/components/PdfViewer.tsx` | **D73 页级**：「标记本页」悬浮按钮（无控制条时显形，当前页已有标记时 active）+ 页码定位器；跳转 = 单页翻页 / 滚动模式页槽置顶（复用初始恢复重钉机制）+ 页级闪烁 1.6s |
+| `frontend/src/components/PdfViewer.tsx` | **D73 页级**：「标记本页」悬浮按钮（无控制条时显形，当前页已有标记时 active）+ 页码定位器；跳转 = 单页翻页 / 滚动模式页槽置顶（复用初始恢复重钉机制）+ 页级闪烁 1.6s。**D101 画笔**：`inkTool`/`inkDrafts` 状态、`inkStrokesOf()` 按页聚合已落库笔迹、`undoInk`/`clearInkPage`/`saveInk`，翻页与滚动两种模式均挂 `PdfInkCanvas` 与 `PdfInkToolbar` |
+| `frontend/src/components/PdfInkCanvas.tsx` | **D101 新增**：透明画笔 canvas（绝对覆盖页面 canvas）。指针绘制、增量描边、DPR 位图、尺寸变化整页回放、橡皮擦逐段命中。未激活时 `pointer-events:none` |
+| `frontend/src/components/PdfInkToolbar.tsx` | **D101 新增**：画笔工具栏（高亮/自由/橡皮、六色、三档粗细、撤销、清空本页、保存、完成），未开启画笔时不渲染 |
+| `frontend/src/utils/pdfInk.ts` | **D101 新增**：画笔纯函数层——`strokeScale`/`scaledPoints`（尺寸归一化）、`tracePath`（中点二次贝塞尔平滑）、`paintStroke`/`repaintPage`、`distToSegmentSq`/`hitStrokes`（橡皮擦逐段命中）、`pushPoint`（采样降噪）、`decimate`（点数抽稀）、`strokeTop`（页内位置） |
 | `frontend/src/components/BookViewer.tsx` | 透传 marks 相关 props 与三个 Viewer 的标记上下文；书架入口不变 |
 | `frontend/src/components/SettingsPanel.tsx` | 新增「标记记录」分组：总开关 + 默认色选择（4 色）+ 说明文案 |
 | `frontend/src/App.tsx` | `marks` state + 订阅；`showMarks` state；Ctrl+M 拦截（仿 Ctrl+O，D74 mirror-ref 门控）；flush 不变；书架移除 handler 串联 marks 清理；渲染 `<MarksPanel>`。**D92 加 `MARK_PANEL_TOGGLE` 打点；D95 改为弹窗浮层（`.marks-backdrop` 遮罩点击关闭 + MarksPanel）** |
@@ -190,6 +193,7 @@ markDefaultColor: MarkColor;
 | A94 | 单本 500 条上限：连续划词至上限，最旧被淘汰且无卡死 | 手动真机（可脚本灌数） | 🟡 单测覆盖淘汰逻辑（marks.test.ts）；连续划词真机待验 |
 | A95 | EPUB 高亮经 annotations 渲染，翻页/切章后高亮仍在；scroll 模式正常 | 手动真机 | 🟡 部分真机确认：D88 翻页正文加载（日志 `len=113151` 持续保持）、D91 目录层级用户已确认；**高亮 annotations 真机翻页/切章后仍在那一项未终验** |
 | A96 | PDF 页级标记：按钮落库/active 态；滚动出页再回来；跨页选词降级为侧栏条目 | 手动真机 | ⏳ 代码完成（D73 页级口径）；真机终验待执行 |
+| A98 | **PDF 画笔（D101）**：翻页/滚动双模式可画；缩放与适宽后笔迹不错位；橡皮擦可擦中段；保存后面板出现「第 N 页 · X%」条目；点条目跳到该页；撤销与清空本页生效 | 手动真机 | ⏳ 代码完成，待真机执行 |
 | A97 | EPUB 翻页模式划词 → 工具条弹出 → 点颜色/写感悟落库（D89） | 手动真机 + `epub-diag.log` 打点 | ⏳ **未验证**：D89 提升 `.mark-toolbar` z-index 并加 `SELECTED_EVENT`/`TOOLBAR_SHOW`/`TOOLBAR_ACTION` 打点，但用户历次回传日志均无划词链路打点；需完成一次「翻页划词 → 点颜色」并回传新日志方可定案 |
 
 **自动化覆盖（实施后回填）**
@@ -238,6 +242,7 @@ markDefaultColor: MarkColor;
 | D98 | D97 口径：悬停只显示**感悟**、点击仍弹气泡（可编辑/删除） | **按用户最终要求重定**：① 悬停显示**标记内容**（原文 + 感悟，不只是感悟），悬浮即显、鼠标离开立即消失；② 提示 `position:fixed` + 视口坐标跟随光标、`pointer-events:none` 完全穿透（「移开即消失」才成立，不再需要「移入提示保持」豁免）；③ **右键高亮 → 「编辑标记 / 删除标记」菜单**（`.mark-menu`，fixed 定位，靠近边界夹紧；点别处/Esc/滚动/缩放关闭）；④ **左键点击高亮的 `mark-bubble` 气泡整体移除**（EPUB 与 TXT 两处），`showBubble`/`bubble` state 一并删除 | 用户明确要求「悬停显示内容 鼠标离开消失，右键可以编辑删除，悬停只显示标记内容」——原「点击弹气泡」不符合直觉。三个实现要点：① epubjs `DOM_EVENTS` 常量**不含 contextmenu**（只有 keydown/keyup/mouseup/mousedown/mousemove/click/touch*），翻页模式 iframe 内右键既冒泡不出也代理不到 → 直接在 iframe document 上装 `contextmenu`，并在 `rendered`/`relocated` 时对新文档补装；② TXT 侧同口径（`mousemove` 命中 `mark[data-mark-id]`、`contextmenu` 弹菜单）；③ 悬停判定条件由「有感悟(note)」改为「有原文(text)」，独立想法无原文不参与悬停 |
 | D99 | 翻页模式可标记、滚动模式标记不了；翻页模式悬停看不到 | **D100 一并修复**（见下行）。D99 交付的 `book-editor-D99.exe` 未含此修复，用户真机反馈后定位 | 用户原话：「滚动模式悬停能看到 但是 翻页模式悬停看不到；翻页模式可以进行标记 但是 滚动模式标记不了」 |
 | D100 | ① 滚动模式拖拽选词判定为欧氏距离 `hypot(dx,dy) > 6`；② 悬停判定只挂在滚动模式的 stage 上 | **两处根因，各自独立**：<br>① **滚动模式标记不了** — scrolled-doc 正文纵向滚动，选词必然带纵向偏移（选到行末下带半行约 8px），而 `hypot > 6` 对「纯纵向小幅拖动」门槛过高，斜向才勉强能过。改为按方向判定：`isMarkDrag()` 抽为可测纯函数，**横向 ≥ 6px 或纵向 ≥ 12px**（纵向门槛更高，因纵向手势更易与滚动混淆）。<br>② **翻页模式悬停看不到** — 翻页模式 iframe **未设** `pointer-events:none`（可交互），鼠标事件进 iframe 文档、不冒泡到宿主 stage，而悬停判定只注册在 stage 上 → 翻页模式从来没有悬停通道（日志里只有滚动模式那次会话的 `HOVER_TIP`，可为证）。改为在 `rendition.hooks.content` 里对章节文档直接挂 `mousemove`，命中后加 `iframe.getBoundingClientRect()` 换算宿主坐标，复用同一个 `scheduleHover`；`WeakSet` 去重防 relocated 重复绑定；离开用 `mouseout + relatedTarget` 判空（Chrome 跨文档边界只发 mouseout，`mouseleave` 不一定触发） | 顺序验证：[D99 日志](./) 只有 `mode=scroll` 一次会话的 `HOVER_TIP`，**翻页模式零悬停打点** → 反证通道缺失而非命中失败。附带清理：`bindStageMarks` 里 `overTip()` 用 `stage.querySelector(".mark-hovertip")` 做豁免是**死代码**（提示浮层渲染在 stage 的兄弟节点，恒返回 null），已删除并留注释防回归——提示本身 `pointer-events:none` 已保证不自激。新增诊断：`DRAG_UP`（dx/dy/isDrag）、`DRAG_UP_NOSTART`（mouseup 到达但 mousedown 未命中 iframe）、`DRAG_DOWN_NOIFRAME`、`HOVER_PAGE_HIT`（翻页命中，按 id 变化节流）、`HOVER_PAGE_NOIFRAME` |
+| D101 | PDF 只有 D73 页级「标记本页」书签，**无法在页面上圈画哪句话/哪张图**；定位器 `quote` 恒空、从未用上 | **新增 PDF 画笔**（用户口径：类似画笔自由作画）：<br>① **数据**：`MarkLocator.pdf` 增加可选 `strokes?: PdfStroke[]`；`PdfStroke = {brush:'highlighter'\|'pen', color, width, points:number[], baseW, baseH, top}`。<br>② **坐标口径**（用户选「像素坐标」）：点的单位就是绘制时该页 canvas 的 CSS 像素；但每条笔迹额外记 `baseW/baseH` 基准尺寸，渲染时按 `当前宽/baseW` 等比缩放 —— 存储口径是像素（直观、可排查），**缩放/适宽/换窗口后笔迹仍严格对齐**。只存像素不存基准尺寸会必然错位，这是像素方案的固有缺陷，`baseW/baseH` 以极低代价规避。<br>③ **画笔层**：新增 `PdfInkCanvas`，每页一块透明 canvas 绝对定位覆盖在页面 canvas 上，`z-index:2`、尺寸按页面 CSS 尺寸 + DPR 位图（上限 4096px）。**未开启画笔时 `pointer-events:none`**，完全不影响阅读/滚动/缩放。<br>④ **工具**：高亮笔（透明度 0.32、粗线 16px）、自由笔（实色 2.5px）、橡皮擦（半径 10px + 线宽/2，逐段距离判定故长笔画中段也能擦）。三档粗细、六色（黄绿蓝粉红墨）。<br>⑤ **双模式**：翻页模式画笔层挂在 `.pdf-page`（双页则各自 `.pdf-page-cell`）；滚动模式挂进每个 `.pdf-page-slot`（虚拟化回收 canvas 时画笔层随之重建，笔迹由 marks 回放）。<br>⑥ **保存口径**：绘制中的笔迹存草稿（不触发 React 重渲染，落笔才提交），点「保存」才落库；同页已有笔迹标记则**追加**进同一条（避免一页画十次生十条面板条目）。「完成」= 有草稿时先自动保存再退出，避免白画。<br>⑦ **面板组织**（用户选「按页码 + 页内位置」）：PDF 走独立排序 `sortPdfMarks()` —— 先页码升序，同页内按 `top`（笔迹最高点/页高）升序，纯书签排同页末端；组头仍是「第 N 页」，条目 meta 补 `第 N 页 · X%` | **为什么不做文字层划词**：pdfjs textLayer 需要与 canvas 逐页对齐、缩放重算、虚拟化重挂，且扫描版 PDF 根本没有文字层；用户要的是「自由作画」，画笔方案直接覆盖这两类场景且不碰已验证的渲染链路。**校验层**：`normalizeStroke` 对点数 <4、奇数点、非法笔刷/颜色、`baseW/baseH<=0` 一律整条丢弃（画坏的笔迹重放出来是乱线，不如不画）；单页上限 200 笔、单笔 4000 点，超长笔画按预算抽稀。**向后兼容**：无笔迹时不写 `strokes` 字段，旧数据与旧标记形态完全不变 |
 
 **风险**
 - EPUB iframe 内选词的坐标换算已有先例（`bindStageInteraction` 的 `iframeContentPoint`），工具条定位复用该函数，不新造轮子。

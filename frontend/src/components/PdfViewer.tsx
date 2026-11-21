@@ -7,6 +7,10 @@ import type { ReaderMode, Settings } from "../utils/settings";
 import { setReaderCommandHandler, scrollStepFor } from "../utils/readerCommands";
 import type { PositionReport } from "../utils/library";
 import type { MarksContext } from "./marksContext";
+import InkCanvas, { type InkTool } from "./PdfInkCanvas";
+import PdfInkToolbar from "./PdfInkToolbar";
+import type { PdfStroke } from "../utils/marks";
+import { PDF_INK_COLORS, PDF_INK_HEX, type PdfBrush, type PdfInkColor } from "../utils/marks";
 import {
   FIT_LABELS,
   PDF_FITS,
@@ -389,6 +393,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           }
           if (host) host.style.width = totalW + "px";
           if (area) area.dataset.fit = maxH <= boxRef.current.h ? "center" : "top";
+          // D101：回填画笔层尺寸（画笔按页面 CSS 像素对齐）
+          setInkBox((prev) => (prev.w === r0.cssW && prev.h === r0.cssH ? prev : { w: r0.cssW, h: r0.cssH }));
           reportScale(r0);
         } else {
           const c0 = canvasRefs.current[0];
@@ -397,6 +403,7 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           if (!r) return;
           if (host) host.style.width = r.cssW + "px";
           if (area) area.dataset.fit = r.cssH <= boxRef.current.h ? "center" : "top";
+          setInkBox((prev) => (prev.w === r.cssW && prev.h === r.cssH ? prev : { w: r.cssW, h: r.cssH }));
           reportScale(r);
         }
         fireReady(); // 首页渲染完成：通知 App 淡出加载遮罩
@@ -661,6 +668,112 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   const pageMarked =
     marksCtx?.marks.some((m) => m.locator.kind === "pdf" && m.locator.page === markPage) ?? false;
 
+  // ===== D101：PDF 画笔（高亮笔 / 自由笔 / 橡皮擦，翻页与滚动双模式）=====
+  // 与 D73「标记本页」的关系：
+  //   - 「标记本页」= 页级书签，一个标记、无笔迹；
+  //   - 画笔 = 在页面上真正圈画，落库为带 strokes 的标记（一个标记可含多笔）。
+  // 两者共存：书签不占画布，笔迹按页聚合。同一页已有笔迹标记时继续画即追加到它，
+  // 避免「一页画十次生十条标记」把面板刷爆。
+  // 图片版 PDF 没有文字层，无法划词，所以画笔是本版 PDF 唯一的「页内标记」手段。
+  type InkDraft = { page: number; strokes: PdfStroke[] };
+  const [inkTool, setInkTool] = useState<InkTool>({
+    active: false,
+    brush: "highlighter",
+    color: "yellow",
+    sizeScale: 1,
+  });
+  /** 每页草稿笔迹：page → strokes（落笔画完即入草稿，点「保存」才落库） */
+  const [inkDrafts, setInkDrafts] = useState<Record<number, PdfStroke[]>>({});
+  /** 画布页面尺寸（随 canvas 渲染结果回填，画笔层据此对齐） */
+  const [inkBox, setInkBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  /** 该页已落库的笔迹（可能分散在多个标记里，按标记顺序拼接） */
+  const inkStrokesOf = useCallback(
+    (page: number): PdfStroke[] => {
+      const out: PdfStroke[] = [];
+      for (const m of marksCtx?.marks ?? []) {
+        if (m.locator.kind !== "pdf" || m.locator.page !== page) continue;
+        const s = m.locator.strokes;
+        if (s && s.length) out.push(...s);
+      }
+      return out;
+    },
+    [marksCtx?.marks]
+  );
+
+  const setDraftFor = useCallback((page: number, strokes: PdfStroke[]) => {
+    setInkDrafts((prev) => ({ ...prev, [page]: strokes }));
+  }, []);
+
+  /** 草稿是否有未保存内容（工具栏显示「保存」高亮） */
+  const inkDirty = Object.values(inkDrafts).some((s) => s.length > 0);
+  const inkDraftTotal = Object.values(inkDrafts).reduce((n, s) => n + s.length, 0);
+
+  /** 撤销：删掉当前页最后一笔（先撤草稿，草稿空了再撤该页已落库的标记） */
+  const undoInk = useCallback(() => {
+    const page = isScroll ? scrollCurrentRef.current : current;
+    const draft = inkDrafts[page] ?? [];
+    if (draft.length > 0) {
+      setDraftFor(page, draft.slice(0, -1));
+      return;
+    }
+    // 草稿已空：找该页最后一个带笔迹的标记，削掉最后一笔
+    const ctx = marksCtxRef.current;
+    if (!ctx) return;
+    const candidates = ctx.marks.filter(
+      (m) => m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0
+    );
+    const last = candidates[candidates.length - 1];
+    if (!last || last.locator.kind !== "pdf") return;
+    const strokes = last.locator.strokes ?? [];
+    if (strokes.length > 1) {
+      // 还有剩：写回剩余笔迹（App 侧 onUpdate 只支持 color，故走替换式更新）
+      ctx.onReplaceInk?.(last.id, strokes.slice(0, -1));
+    } else {
+      ctx.onDelete(last.id);
+    }
+  }, [isScroll, current, inkDrafts, setDraftFor]);
+
+  /** 清空当前页画笔（草稿 + 已落库该页笔迹标记） */
+  const clearInkPage = useCallback(() => {
+    const page = isScroll ? scrollCurrentRef.current : current;
+    setDraftFor(page, []);
+    const ctx = marksCtxRef.current;
+    if (!ctx) return;
+    for (const m of ctx.marks) {
+      if (m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0) {
+        ctx.onDelete(m.id);
+      }
+    }
+  }, [isScroll, current, setDraftFor]);
+
+  /** 保存：把各页草稿落库。同页已有笔迹标记则追加进去，否则新建标记。 */
+  const saveInk = useCallback(() => {
+    const ctx = marksCtxRef.current;
+    if (!ctx) return;
+    const pages = Object.keys(inkDrafts)
+      .map(Number)
+      .filter((p) => (inkDrafts[p]?.length ?? 0) > 0)
+      .sort((a, b) => a - b);
+    for (const page of pages) {
+      const fresh = inkDrafts[page];
+      const existing = ctx.marks.find(
+        (m) => m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0
+      );
+      if (existing && existing.locator.kind === "pdf") {
+        ctx.onReplaceInk?.(existing.id, [...(existing.locator.strokes ?? []), ...fresh]);
+      } else {
+        ctx.onAdd({
+          color: ctx.defaultColor,
+          text: "",
+          locator: { kind: "pdf", page, quote: "", strokes: fresh },
+        });
+      }
+    }
+    setInkDrafts({});
+    setInkTool((t) => ({ ...t, active: false }));
+  }, [inkDrafts]);
+
   // 跳转目标（§4.16/F35）：面板点条目 → 目标页置顶/翻页 + 页槽闪烁 1.6s。
   // 滚动模式复用初始恢复的重钉机制：未测量页先用估算高度落位，真实高度回填后再校正。
   useEffect(() => {
@@ -790,12 +903,25 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
                   style={{ width: w > 0 ? w : undefined, height: heights[i] || ESTIMATE_H }}
                 >
                   {inWin ? (
-                    <canvas
-                      className="pdf-canvas"
-                      ref={(el) => {
-                        canvasRefs.current[i] = el;
-                      }}
-                    />
+                    <>
+                      <canvas
+                        className="pdf-canvas"
+                        ref={(el) => {
+                          canvasRefs.current[i] = el;
+                        }}
+                      />
+                      {/* D101：画笔层叠在页面 canvas 上；尺寸取该页真实渲染尺寸。
+                          heights 在该页渲染完成前为 0，此时退化为槽位占位高度，
+                          保证画笔层在页面可见的第一时间就能画（回填后自动校正）。 */}
+                      <InkCanvas
+                        strokes={inkStrokesOf(i + 1)}
+                        draftStrokes={inkDrafts[i + 1] ?? []}
+                        pageW={widths[i] || box.w}
+                        pageH={heights[i] || ESTIMATE_H}
+                        tool={inkTool}
+                        onStrokesChange={(next) => setDraftFor(i + 1, next)}
+                      />
+                    </>
                   ) : (
                     <div className="pdf-page-placeholder" />
                   )}
@@ -820,6 +946,42 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
             <span>标记本页</span>
           </button>
         )}
+        {/* D101：画笔入口（滚动模式浮在右下角，与「标记本页」并排） */}
+        {marksCtx?.enabled && pageCount > 0 && !inkTool.active && (
+          <button
+            type="button"
+            className="pdf-ink-fab"
+            onClick={() => setInkTool((t) => ({ ...t, active: true }))}
+            title="在页面上做记号（高亮笔 / 自由笔 / 橡皮擦）"
+            aria-label="画笔"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 19l7-7 3 3-7 7-3-3z" />
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+              <path d="M2 2l7.586 7.586" />
+              <circle cx="11" cy="11" r="2" />
+            </svg>
+            <span>画笔</span>
+          </button>
+        )}
+        {marksCtx?.enabled && inkTool.active && (
+          <PdfInkToolbar
+            tool={inkTool}
+            draftCount={inkDraftTotal}
+            canClear={(inkDrafts[scrollCurrent]?.length ?? 0) > 0 || inkStrokesOf(scrollCurrent).length > 0}
+            canUndo={(inkDrafts[scrollCurrent]?.length ?? 0) > 0 || inkStrokesOf(scrollCurrent).length > 0}
+            onChange={(patch) => setInkTool((t) => ({ ...t, ...patch }))}
+            onUndo={undoInk}
+            onClearPage={clearInkPage}
+            onSave={saveInk}
+            onClose={() => {
+              // 「完成」= 保存并退出：静默丢弃未保存笔迹会让用户白画一通，
+              // 故有草稿时先落库再退出（与「保存」的唯一差别是不显式提示）。
+              if (inkDraftTotal > 0) saveInk();
+              else setInkTool((t) => ({ ...t, active: false }));
+            }}
+          />
+        )}
       </section>
     );
   }
@@ -834,30 +996,80 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
         <div className="pdf-page" ref={hostRef} data-spread={spreadOn ? "1" : "0"}>
           {spreadOn ? (
             <>
+              <div className="pdf-page-cell">
+                <canvas
+                  className="pdf-canvas"
+                  ref={(el) => {
+                    canvasRefs.current[0] = el;
+                  }}
+                />
+                {/* D101：画笔层（左页） */}
+                <InkCanvas
+                  strokes={inkStrokesOf(current)}
+                  draftStrokes={inkDrafts[current] ?? []}
+                  pageW={inkBox.w}
+                  pageH={inkBox.h}
+                  tool={inkTool}
+                  onStrokesChange={(next) => setDraftFor(current, next)}
+                />
+              </div>
+              <div className="pdf-page-cell">
+                <canvas
+                  className="pdf-canvas"
+                  ref={(el) => {
+                    canvasRefs.current[1] = el;
+                  }}
+                />
+                {/* D101：画笔层（右页） */}
+                <InkCanvas
+                  strokes={inkStrokesOf(current + 1)}
+                  draftStrokes={inkDrafts[current + 1] ?? []}
+                  pageW={inkBox.w}
+                  pageH={inkBox.h}
+                  tool={inkTool}
+                  onStrokesChange={(next) => setDraftFor(current + 1, next)}
+                />
+              </div>
+            </>
+          ) : (
+            <>
               <canvas
                 className="pdf-canvas"
                 ref={(el) => {
                   canvasRefs.current[0] = el;
                 }}
               />
-              <canvas
-                className="pdf-canvas"
-                ref={(el) => {
-                  canvasRefs.current[1] = el;
-                }}
+              {/* D101：画笔层（单页） */}
+              <InkCanvas
+                strokes={inkStrokesOf(current)}
+                draftStrokes={inkDrafts[current] ?? []}
+                pageW={inkBox.w}
+                pageH={inkBox.h}
+                tool={inkTool}
+                onStrokesChange={(next) => setDraftFor(current, next)}
               />
             </>
-          ) : (
-            <canvas
-              className="pdf-canvas"
-              ref={(el) => {
-                canvasRefs.current[0] = el;
-              }}
-            />
           )}
           {pageCount > 0 && <div className="pdf-footer">— {current} —</div>}
         </div>
       </div>
+      {/* D101：画笔工具栏（翻页模式浮在控制条上方） */}
+      {marksCtx?.enabled && inkTool.active && (
+        <PdfInkToolbar
+          tool={inkTool}
+          draftCount={inkDraftTotal}
+          canClear={(inkDrafts[current]?.length ?? 0) > 0 || inkStrokesOf(current).length > 0}
+          canUndo={(inkDrafts[current]?.length ?? 0) > 0 || inkStrokesOf(current).length > 0}
+          onChange={(patch) => setInkTool((t) => ({ ...t, ...patch }))}
+          onUndo={undoInk}
+          onClearPage={clearInkPage}
+          onSave={saveInk}
+          onClose={() => {
+            if (inkDraftTotal > 0) saveInk();
+            else setInkTool((t) => ({ ...t, active: false }));
+          }}
+        />
+      )}
       <div className="pdf-controls">
         <button
           type="button"
@@ -918,6 +1130,23 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
             标记本页
+          </button>
+        )}
+        {/* D101：画笔入口（翻页模式放在控制条内） */}
+        {marksCtx?.enabled && pageCount > 0 && !inkTool.active && (
+          <button
+            type="button"
+            className="pg-btn pg-ink"
+            onClick={() => setInkTool((t) => ({ ...t, active: true }))}
+            title="在页面上做记号（高亮笔 / 自由笔 / 橡皮擦）"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 19l7-7 3 3-7 7-3-3z" />
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
+              <path d="M2 2l7.586 7.586" />
+              <circle cx="11" cy="11" r="2" />
+            </svg>
+            画笔
           </button>
         )}
         <button

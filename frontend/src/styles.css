@@ -220,6 +220,93 @@ pre.txt-viewer {
 /* v0.2.9 双页并排：两 canvas 横排 + 14px 间距；宽度由 JS 按两页实际宽度写入 */
 .pdf-page[data-spread="1"] { display: flex; gap: 14px; }
 .pdf-canvas { display: block; }
+
+/* ===== D101：PDF 画笔层与工具栏 ===== */
+/* 画笔 canvas 绝对定位覆盖在页面 canvas 上，尺寸由组件按页面 CSS 尺寸写入；
+   未开启画笔时 pointer-events:none（组件内联设置），完全不干扰阅读与滚动 */
+.pdf-ink {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  display: block;
+}
+.pdf-page[data-spread="1"] .pdf-page-cell {
+  position: relative;
+  line-height: 0;
+}
+/* 单页模式下画笔层相对 .pdf-page 定位；双页模式相对各自的 pdf-page-cell */
+.pdf-page:not([data-spread="1"]) > .pdf-ink { left: 0; top: 0; }
+.pdf-page-slot { position: relative; }
+.pdf-ink.eraser { cursor: cell; }
+
+.pdf-ink-fab,
+.pdf-mark-fab {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-bg);
+  color: var(--text-2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .14);
+  cursor: pointer;
+}
+/* 两个悬浮按钮错开：标记本页在下，画笔在其上方 */
+.pdf-ink-fab { bottom: 58px; z-index: 6; }
+.pdf-ink-fab:hover,
+.pdf-mark-fab:hover { color: var(--accent); border-color: var(--accent); }
+
+/* 画笔工具栏：悬浮在阅读区底部，横向排布，窄窗口自动换行 */
+.pdf-ink-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  max-width: calc(100% - 32px);
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-bg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
+}
+.pdf-ink-bar .ib-group { display: flex; align-items: center; gap: 4px; }
+.pdf-ink-bar .ib-sep { width: 1px; height: 18px; background: var(--border-soft); }
+.pdf-ink-bar .ib-btn {
+  padding: 5px 9px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.pdf-ink-bar .ib-btn:hover:not(:disabled) { background: var(--bar-bg); color: var(--text); }
+.pdf-ink-bar .ib-btn.on { background: var(--active-bg); color: var(--accent); border-color: var(--accent); }
+.pdf-ink-bar .ib-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pdf-ink-bar .ib-btn.primary { border-color: var(--border-soft); }
+.pdf-ink-bar .ib-btn.primary.dirty { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pdf-ink-bar .ib-dot {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15);
+  cursor: pointer;
+}
+.pdf-ink-bar .ib-dot.on { border-color: var(--text); transform: scale(1.12); }
 .pdf-footer {
   position: absolute;
   bottom: 10px;

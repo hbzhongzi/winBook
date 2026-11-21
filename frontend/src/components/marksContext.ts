@@ -3,7 +3,7 @@
 // 定位器（TXT 偏移 / EPUB CFI / PDF 页码）与选词采集方式，故抽成共享契约。
 // 口径见 doce/BookEditor-v0.3.0-标记记录模块开发方案.md §3/§4。
 
-import type { Mark, MarkColor, MarkLocator } from "../utils/marks";
+import type { Mark, MarkColor, MarkLocator, PdfStroke } from "../utils/marks";
 
 export type AddMarkInput = {
   color: MarkColor;
@@ -26,6 +26,12 @@ export type MarksContext = {
   onAdd: (input: AddMarkInput) => Mark;
   /** 既有条目改色（工具条 existing 态色点） */
   onUpdate: (id: string, patch: { color?: MarkColor }) => void;
+  /**
+   * 替换某条 PDF 标记的笔迹（D101 画笔）：
+   * 画笔是「一页多条笔迹」的聚合结构，增删一笔用整组替换最简单且不会产生中间态。
+   * 笔迹清空时由调用方改为删除整条标记（不保留空壳）。
+   */
+  onReplaceInk?: (id: string, strokes: PdfStroke[]) => void;
   /** 打开感悟编辑器（新建：quote 为划选原文；idea=true 为「写想法」） */
   onNoteNew: (info: { quote: string; locator: MarkLocator; idea?: boolean }) => void;
   /** 打开感悟编辑器（编辑既有条目，回显 note/color） */

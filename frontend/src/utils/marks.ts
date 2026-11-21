@@ -20,15 +20,63 @@ export const MARK_COLOR_LABELS: Record<MarkColor, string> = {
 };
 
 /**
+ * PDF 画笔笔刷（D101）：
+ * - highlighter：半透明粗笔，模拟荧光笔，覆盖在正文上仍可读；
+ * - pen：自由笔，实色细线；
+ * - eraser：橡皮擦（**不落库**，只删本页已绘笔画）。
+ */
+export type PdfBrush = "highlighter" | "pen" | "eraser";
+export const PDF_BRUSHES: PdfBrush[] = ["highlighter", "pen", "eraser"];
+
+/** 画笔颜色白名单（比划词高亮多两色：墨黑用于书写、红用于批注强调） */
+export type PdfInkColor = "yellow" | "green" | "blue" | "pink" | "ink" | "red";
+export const PDF_INK_COLORS: PdfInkColor[] = ["yellow", "green", "blue", "pink", "red", "ink"];
+
+export const PDF_INK_HEX: Record<PdfInkColor, string> = {
+  yellow: "#f5c518",
+  green: "#38b26a",
+  blue: "#3b82f6",
+  pink: "#ec4899",
+  red: "#e5484d",
+  ink: "#1f2328",
+};
+
+/**
+ * 一条笔迹（D101）。
+ *
+ * 坐标单位按用户选择存**像素**（绘制时该页 canvas 的 CSS 像素），但每条笔迹
+ * 额外记录 `baseW`/`baseH`（绘制时的页面 CSS 尺寸）。渲染时按
+ * `当前尺寸 / baseW` 等比缩放——这样：
+ *   1. 存储口径确实是用户要的像素坐标，语义直观、便于排查；
+ *   2. 缩放、适宽、窗口拉伸、DPR 变化后笔迹**仍然对齐**，不会飘移。
+ * 若只存像素而不存基准尺寸，任何缩放都会整体错位（这是像素坐标方案的固有缺陷，
+ * 用 baseW/baseH 做归一化可完全规避，代价只是每笔多两个数）。
+ */
+export type PdfStroke = {
+  /** 笔刷类型（eraser 不落库） */
+  brush: Exclude<PdfBrush, "eraser">;
+  color: PdfInkColor;
+  /** 线宽（绘制时 CSS 像素，随页面等比缩放） */
+  width: number;
+  /** 坐标序列 [x0,y0,x1,y1,...]，绘制时 canvas CSS 像素 */
+  points: number[];
+  /** 绘制时页面 CSS 宽高（归一化基准） */
+  baseW: number;
+  baseH: number;
+  /** 笔迹在页面上的起始纵向位置占页高比例（0~1），用于「按页内位置」排序 */
+  top: number;
+};
+
+/**
  * 三格式定位器：
  * - EPUB：CFI（epubjs annotations 渲染高亮，display(cfi) 跳转）；
  * - TXT：字符偏移（字号无关，与 ReadingPosition.anchor 同口径）；
- * - PDF：页码 + quote（本版 PDF 无文本层，quote 恒为空串，见方案 D73）。
+ * - PDF：页码 + quote + strokes（D101 画笔笔迹，无笔迹时为空数组）。
  */
 export type MarkLocator =
   | { kind: "epub"; cfi: string; href: string; chapter: string }
   | { kind: "txt"; start: number; end: number }
-  | { kind: "pdf"; page: number; quote: string };
+  | { kind: "pdf"; page: number; quote: string; strokes?: PdfStroke[] };
 
 export type Mark = {
   id: string;
@@ -70,6 +118,62 @@ function isColor(v: unknown): v is MarkColor {
   return typeof v === "string" && (MARK_COLORS as string[]).includes(v);
 }
 
+function isInkColor(v: unknown): v is PdfInkColor {
+  return typeof v === "string" && (PDF_INK_COLORS as string[]).includes(v);
+}
+
+/** 单页笔迹条数上限：防止异常数据写爆存储（正常手写一页远低于此值） */
+export const MAX_STROKES_PER_PAGE = 200;
+/** 单条笔迹点数上限 */
+const MAX_POINTS_PER_STROKE = 4000;
+
+/**
+ * 笔迹校验（D101）：任何一处不合法就整条丢弃——
+ * 画笔数据只在「绘制时」产生，损坏的笔迹重放出来会是乱线，不如不画。
+ */
+function normalizeStroke(raw: unknown): PdfStroke | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (r.brush !== "highlighter" && r.brush !== "pen") return null;
+  if (!isInkColor(r.color)) return null;
+  const width = Number(r.width);
+  const baseW = Number(r.baseW);
+  const baseH = Number(r.baseH);
+  if (!Number.isFinite(width) || width <= 0 || width > 200) return null;
+  if (!Number.isFinite(baseW) || baseW <= 0) return null;
+  if (!Number.isFinite(baseH) || baseH <= 0) return null;
+  if (!Array.isArray(r.points)) return null;
+  const pts = r.points.slice(0, MAX_POINTS_PER_STROKE);
+  // 至少两个点（4 个数）才构成一条可画的线
+  if (pts.length < 4 || pts.length % 2 !== 0) return null;
+  const clean: number[] = [];
+  for (const p of pts) {
+    const n = Number(p);
+    if (!Number.isFinite(n) || n < -1_000_000 || n > 1_000_000) return null;
+    clean.push(n);
+  }
+  const top = Number(r.top);
+  return {
+    brush: r.brush,
+    color: r.color,
+    width,
+    points: clean,
+    baseW,
+    baseH,
+    top: Number.isFinite(top) ? Math.min(1, Math.max(0, top)) : 0,
+  };
+}
+
+function normalizeStrokes(raw: unknown): PdfStroke[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PdfStroke[] = [];
+  for (const s of raw.slice(0, MAX_STROKES_PER_PAGE)) {
+    const n = normalizeStroke(s);
+    if (n) out.push(n);
+  }
+  return out;
+}
+
 function normalizeLocator(raw: unknown): MarkLocator | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -91,7 +195,14 @@ function normalizeLocator(raw: unknown): MarkLocator | null {
   if (r.kind === "pdf") {
     const page = clampInt(Number(r.page), 1, 1_000_000, 0);
     if (page < 1) return null;
-    return { kind: "pdf", page, quote: typeof r.quote === "string" ? r.quote.slice(0, MAX_TEXT) : "" };
+    const strokes = normalizeStrokes(r.strokes);
+    return {
+      kind: "pdf",
+      page,
+      quote: typeof r.quote === "string" ? r.quote.slice(0, MAX_TEXT) : "",
+      // 空数组不写字段：纯书签条目保持与 v0.3.0 完全一致的存储形态（向后兼容）
+      ...(strokes.length ? { strokes } : {}),
+    };
   }
   return null;
 }
@@ -215,13 +326,26 @@ export function addMark(input: {
 }
 
 /** 更新字段（note/color/text）；刷新 updatedAt 并置顶 */
-export function updateMark(id: string, patch: { note?: string; color?: MarkColor; text?: string }): void {
+export function updateMark(
+  id: string,
+  patch: { note?: string; color?: MarkColor; text?: string; strokes?: PdfStroke[] }
+): void {
   const all = loadMarks();
   const idx = all.findIndex((m) => m.id === id);
   if (idx < 0) return;
   const cur = all[idx];
+  let locator = cur.locator;
+  // D101：笔迹替换只对 PDF 定位器有意义（其它格式没有画笔层）
+  if (patch.strokes !== undefined && locator.kind === "pdf") {
+    const clean = normalizeStrokes(patch.strokes);
+    locator = {
+      ...locator,
+      ...(clean.length ? { strokes: clean } : { strokes: undefined }),
+    } as MarkLocator;
+  }
   const next: Mark = {
     ...cur,
+    locator,
     ...(patch.note !== undefined ? { note: patch.note.slice(0, MAX_TEXT) } : {}),
     ...(patch.color !== undefined && isColor(patch.color) ? { color: patch.color } : {}),
     ...(patch.text !== undefined ? { text: patch.text.slice(0, MAX_TEXT) } : {}),
@@ -271,6 +395,52 @@ export function markGroup(m: Mark): string {
   if (m.locator.kind === "epub") return m.locator.chapter || "正文";
   if (m.locator.kind === "pdf") return "第 " + m.locator.page + " 页";
   return "全文";
+}
+
+/** 该标记是否为 PDF 画笔笔迹（D101） */
+export function isInkMark(m: Mark): boolean {
+  return m.locator.kind === "pdf" && (m.locator.strokes?.length ?? 0) > 0;
+}
+
+/** 笔迹条数（面板条目展示「N 笔」；非笔迹标记返回 0） */
+export function inkStrokeCount(m: Mark): number {
+  return m.locator.kind === "pdf" ? m.locator.strokes?.length ?? 0 : 0;
+}
+
+/**
+ * 标记在页面上的纵向起始位置（0~1，用于「按页内位置」排序）。
+ * - PDF 笔迹：取所有笔画 `top` 的最小值（一条标记可能跨多笔）；
+ * - 其它格式/纯书签：null（排序时殿后，不参与页内位置比较）。
+ */
+export function markPageTop(m: Mark): number | null {
+  if (m.locator.kind !== "pdf") return null;
+  const strokes = m.locator.strokes;
+  if (!strokes || strokes.length === 0) return null;
+  let min = 1;
+  for (const s of strokes) if (s.top < min) min = s.top;
+  return min;
+}
+
+/**
+ * PDF 标记排序（D101）：
+ * 1. 页码升序 —— 与阅读顺序一致；
+ * 2. 同页内按页内纵向位置升序 —— 从上到下；
+ * 3. 无位置者（纯书签/其它）排在同页末端，保持相对稳定（按 updatedAt 新→旧）。
+ */
+export function sortPdfMarks(marks: Mark[]): Mark[] {
+  const pageOf = (m: Mark) => (m.locator.kind === "pdf" ? m.locator.page : 0);
+  return [...marks].sort((a, b) => {
+    const pa = pageOf(a);
+    const pb = pageOf(b);
+    if (pa !== pb) return pa - pb;
+    const ta = markPageTop(a);
+    const tb = markPageTop(b);
+    if (ta === null && tb === null) return b.updatedAt - a.updatedAt;
+    if (ta === null) return 1;
+    if (tb === null) return -1;
+    if (ta !== tb) return ta - tb;
+    return b.updatedAt - a.updatedAt;
+  });
 }
 
 /** 章节路径（D96）：EPUB 侧记录的「父章 › 子节」阅读顺序路径；其它格式无层级 */
@@ -375,6 +545,13 @@ export function exportMarksMarkdown(bookName: string, marks: Mark[]): string {
       }
       if (m.text) {
         lines.push("> " + m.text.replace(/\n/g, "\n> "), "");
+      }
+      // D101：PDF 画笔标记——Markdown 无法承载矢量笔迹，导出为「笔数 + 页内位置」描述
+      if (isInkMark(m)) {
+        const n = inkStrokeCount(m);
+        const top = markPageTop(m);
+        const where = top === null ? "" : "，位于页面 " + Math.round(top * 100) + "% 高度处";
+        lines.push("✎ 手写标注：" + n + " 笔" + where, "");
       }
       if (m.note) lines.push("**感悟：** " + m.note, "");
       const pos =

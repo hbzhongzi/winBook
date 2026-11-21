@@ -18,6 +18,10 @@ import {
   markChapterPaths,
   markGroup,
   sortChapterGroups,
+  sortPdfMarks,
+  isInkMark,
+  inkStrokeCount,
+  markPageTop,
   type Mark,
   type MarkChapterPath,
   type MarkColor,
@@ -59,6 +63,13 @@ type Props = {
 function itemText(m: Mark): string {
   if (m.idea) return "◆ 想法";
   if (m.text) return m.text;
+  // D101：画笔标记——展示笔数与页内位置，比「（第 N 页标记）」更有信息量
+  if (isInkMark(m)) {
+    const n = inkStrokeCount(m);
+    const top = markPageTop(m);
+    const where = top === null ? "" : "，页内 " + Math.round(top * 100) + "% 处";
+    return "✎ 手写标注 " + n + " 笔" + where;
+  }
   if (m.locator.kind === "pdf") return "（第 " + m.locator.page + " 页标记）";
   return "（无原文）";
 }
@@ -66,7 +77,12 @@ function itemText(m: Mark): string {
 /**  meta 行位置补充：EPUB 章节 / PDF 页码；TXT 不补（组头已体现） */
 function metaPos(m: Mark): string | null {
   if (m.locator.kind === "epub") return m.locator.chapter || "正文";
-  if (m.locator.kind === "pdf") return "第 " + m.locator.page + " 页";
+  if (m.locator.kind === "pdf") {
+    // D101：PDF 补页内位置，便于区分同页多条标注
+    const top = markPageTop(m);
+    if (top !== null) return "第 " + m.locator.page + " 页 · " + Math.round(top * 100) + "%";
+    return "第 " + m.locator.page + " 页";
+  }
   return null;
 }
 
@@ -108,6 +124,8 @@ export default function MarksPanel({
 
   // 分组（D96）：按章节组织——先按 markGroup 归类，再用目录树反查阅读顺序。
   // 有 tocCtx 时组内按目录顺序排列（父章在前、子节紧随）；无则退化为首次出现顺序。
+  // D101：PDF 走另一套口径——组按页码升序（markGroup 产出「第 N 页」），
+  // 组内按笔迹在页面上的纵向位置从上到下排，纯书签排在同页末端。
   const groups = useMemo(() => {
     const map = new Map<string, Mark[]>();
     for (const m of filtered) {
@@ -116,6 +134,28 @@ export default function MarksPanel({
       if (arr) arr.push(m);
       else map.set(g, [m]);
     }
+    // PDF：不参与目录树排序，改用页码数值排序 + 页内位置排序
+    const pdfOnly = filtered.length > 0 && filtered.every((m) => m.locator.kind === "pdf" || m.idea);
+    if (pdfOnly) {
+      const list = [...map.entries()].map(([name, items]) => ({
+        name,
+        order: null as number[] | null,
+        labels: null as string[] | null,
+        // 组内：按页内纵向位置；想法/纯书签无位置者殿后（sortPdfMarks 已封装该口径）
+        items: sortPdfMarks(items),
+      }));
+      // 组排序：「想法」置顶，其余按页码数值升序
+      list.sort((a, b) => {
+        const isIdea = (n: string) => (n === "想法" ? -1 : 0);
+        const ia = isIdea(a.name);
+        const ib = isIdea(b.name);
+        if (ia !== ib) return ia - ib;
+        const na = Number(a.name.replace(/[^\d]/g, "")) || 0;
+        const nb = Number(b.name.replace(/[^\d]/g, "")) || 0;
+        return na - nb;
+      });
+      return list;
+    }
     const paths: Map<string, MarkChapterPath> | null = tocCtx?.nodes.length
       ? markChapterPaths(filtered, tocCtx.nodes)
       : null;
@@ -123,7 +163,8 @@ export default function MarksPanel({
       const path = paths ? items.map((m) => paths.get(m.id)).find(Boolean) ?? null : null;
       return { name, order: path?.order ?? null, labels: path?.labels ?? null, items };
     });
-    return sortChapterGroups(list);  }, [filtered, tocCtx]);
+    return sortChapterGroups(list);
+  }, [filtered, tocCtx]);
 
   const notedCount = useMemo(() => marks.filter((m) => !!m.note).length, [marks]);
   const chipCount = (f: Filter): number => {

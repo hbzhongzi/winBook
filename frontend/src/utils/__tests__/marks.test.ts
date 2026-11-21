@@ -16,6 +16,10 @@ import {
   markGroup,
   markChapterPaths,
   sortChapterGroups,
+  isInkMark,
+  inkStrokeCount,
+  markPageTop,
+  sortPdfMarks,
   normalizeMark,
   removeMark,
   removeMarks,
@@ -623,5 +627,123 @@ describe("D96：标记按章节组织", () => {
       { name: "Part 1", order: [0], items: [] },
     ]);
     expect(sorted.map((g) => g.name)).toEqual(["Part 1", "Story Two", "想法", "未归类"]);
+  });
+});
+
+describe("D101：PDF 画笔笔迹", () => {
+  const mkStroke = (over: Partial<Record<string, unknown>> = {}) => ({
+    brush: "pen",
+    color: "red",
+    width: 3,
+    points: [10, 20, 30, 40],
+    baseW: 800,
+    baseH: 1000,
+    top: 0.2,
+    ...over,
+  });
+
+  const mkInkMark = (strokes: unknown[], page = 3) =>
+    normalizeMark({
+      id: "m1",
+      bookPath: "/a.pdf",
+      color: "yellow",
+      text: "",
+      note: "",
+      locator: { kind: "pdf", page, quote: "", strokes },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+  it("合法笔迹被保留，坐标与基准尺寸不变", () => {
+    const m = mkInkMark([mkStroke()]);
+    expect(m).not.toBeNull();
+    const loc = m!.locator;
+    expect(loc.kind).toBe("pdf");
+    if (loc.kind !== "pdf") return;
+    expect(loc.strokes).toHaveLength(1);
+    expect(loc.strokes![0].points).toEqual([10, 20, 30, 40]);
+    expect(loc.strokes![0].baseW).toBe(800);
+  });
+
+  it("无笔迹的纯书签条目不写 strokes 字段（兼容旧数据）", () => {
+    const m = mkInkMark([]);
+    const loc = m!.locator;
+    if (loc.kind !== "pdf") return;
+    expect(loc.strokes).toBeUndefined();
+    expect(isInkMark(m!)).toBe(false);
+  });
+
+  it("损坏笔迹逐条丢弃：点数不足 4 个、奇数个、非法笔刷、非法颜色", () => {
+    const m = mkInkMark([
+      mkStroke({ points: [1, 2] }), // 只有一个点
+      mkStroke({ points: [1, 2, 3] }), // 奇数
+      mkStroke({ brush: "eraser" }), // 橡皮擦不落库
+      mkStroke({ color: "紫" }), // 非法颜色
+      mkStroke(), // 唯一合法
+    ]);
+    const loc = m!.locator;
+    if (loc.kind !== "pdf") return;
+    expect(loc.strokes).toHaveLength(1);
+  });
+
+  it("基准尺寸缺失或为 0 的笔迹被丢弃（否则缩放时无法归一化）", () => {
+    // 校验的是 isInkMark / inkStrokeCount 的可见结果，而不是字段是否存在
+    expect(isInkMark(mkInkMark([mkStroke({ baseW: 0 })])!)).toBe(false);
+    expect(isInkMark(mkInkMark([mkStroke({ baseH: -1 })])!)).toBe(false);
+    expect(inkStrokeCount(mkInkMark([mkStroke({ baseW: 0 })])!)).toBe(0);
+  });
+
+  it("top 被钳制到 0~1", () => {
+    const m = mkInkMark([mkStroke({ top: 5 })]);
+    const loc = m!.locator;
+    if (loc.kind !== "pdf") return;
+    expect(loc.strokes![0].top).toBe(1);
+  });
+
+  it("isInkMark / inkStrokeCount / markPageTop 读值正确", () => {
+    const m = mkInkMark([mkStroke({ top: 0.6 }), mkStroke({ top: 0.3 })])!;
+    expect(isInkMark(m)).toBe(true);
+    expect(inkStrokeCount(m)).toBe(2);
+    // 取最早（最上）的位置
+    expect(markPageTop(m)).toBeCloseTo(0.3);
+  });
+
+  it("sortPdfMarks：先按页码，再按页内纵向位置，无位置者殿后", () => {
+    const ink = (page: number, top: number, id: string) =>
+      normalizeMark({
+        id,
+        bookPath: "/a.pdf",
+        color: "yellow",
+        text: "",
+        note: "",
+        locator: { kind: "pdf", page, quote: "", strokes: [mkStroke({ top })] },
+        createdAt: 1,
+        updatedAt: 1,
+      })!;
+    const bookmark = (page: number, id: string) =>
+      normalizeMark({
+        id,
+        bookPath: "/a.pdf",
+        color: "yellow",
+        text: "",
+        note: "",
+        locator: { kind: "pdf", page, quote: "" },
+        createdAt: 1,
+        updatedAt: 1,
+      })!;
+    const sorted = sortPdfMarks([
+      ink(5, 0.8, "e"),
+      bookmark(3, "bm"),
+      ink(5, 0.1, "d"),
+      ink(2, 0.5, "c"),
+    ]);
+    expect(sorted.map((m) => m.id)).toEqual(["c", "bm", "d", "e"]);
+  });
+
+  it("导出 Markdown 含手写标注与页内位置描述", () => {
+    const m = mkInkMark([mkStroke({ top: 0.42 })])!;
+    const md = exportMarksMarkdown("测试书", [m]);
+    expect(md).toContain("手写标注：1 笔");
+    expect(md).toContain("42%");
   });
 });
