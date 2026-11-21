@@ -10,6 +10,7 @@ import { applyReadingStyle } from "../utils/readingTheme";
 import type { ReadingPosition, PositionReport } from "../utils/library";
 import { MARK_SELECT_MIN, type Mark, type MarkColor, type MarkLocator } from "../utils/marks";
 import { epubDiag, clearEpubDiag, getEpubDiagText } from "../utils/epubDiag";
+import { filterRects, toSvgRect, type RectLike } from "../utils/epubHighlight";
 import MarkToolbar, { type MarkToolbarMode } from "./MarkToolbar";
 import type { MarksContext } from "./marksContext";
 
@@ -1119,6 +1120,60 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   };
 
   /**
+   * 用正确的 rect 过滤重画一条高亮（D103）。
+   *
+   * 为什么不能直接用 marks-pane 的结果：它的 `filteredRanges()` 会丢弃「被其它矩形
+   * 包含」的框。`Range.getClientRects()` 在跨块元素（段落/body）选区时会额外返回
+   * 一个容器级包围盒，于是逐行框全被它吞掉 → 只画出一个大矩形 = 整块实心色块。
+   *
+   * 本函数自己算 rect、自己写 `<rect>`，并**保留**被包含的逐行框（它们才是贴合
+   * 文字的部分）。原点取 pane 的 `<svg>` 而非 `<g>`：`<g>` 首次渲染前包围盒为 0，
+   * 用它当原点会导致整体偏移；`<svg>` 由 Pane 显式定位（top/left 为 important 像素），
+   * 稳定可复现。
+   */
+  const repaintHighlight = (mark: unknown): void => {
+    const m = mark as
+      | { range?: Range; element?: SVGGElement | null; attributes?: Record<string, string> }
+      | null
+      | undefined;
+    const g = m?.element;
+    const range = m?.range;
+    if (!g || !range) return;
+    const svg = g.parentElement; // Pane 的 <svg>
+    if (!svg) return;
+    const ownDoc = g.ownerDocument;
+    const view = ownDoc?.defaultView;
+    if (!view) return;
+    // 读取真实选区的逐行矩形。getClientRects 的坐标系是「章节文档视口」，
+    // Pane 的 svg 也铺在同一坐标系（absolute 覆盖 iframe 内容区），故直接用其
+    // 视口矩形作原点。
+    const rects = filterRects(Array.from(range.getClientRects()) as RectLike[]);
+    if (rects.length === 0) return;
+    const svgRect = svg.getBoundingClientRect();
+    // 清空旧子节点后按本算法重建
+    while (g.firstChild) g.removeChild(g.firstChild);
+    const attrs = m.attributes ?? {};
+    for (const r of rects) {
+      const box = toSvgRect(r, svgRect.left, svgRect.top);
+      const el = ownDoc.createElementNS("http://www.w3.org/2000/svg", "rect");
+      el.setAttribute("x", String(box.x));
+      el.setAttribute("y", String(box.y));
+      el.setAttribute("width", String(box.width));
+      el.setAttribute("height", String(box.height));
+      el.setAttribute("rx", "2");
+      // 颜色写在每个 rect 上（而非依赖 <g> 继承）：即使宿主或书籍 CSS 对
+      // g 设了 fill，也不会把颜色改掉，各行颜色始终一致。
+      if (attrs.fill) el.setAttribute("fill", attrs.fill);
+      if (attrs["fill-opacity"]) el.setAttribute("fill-opacity", attrs["fill-opacity"]);
+      g.appendChild(el);
+    }
+    epubDiag(
+      "HL_REPAINT",
+      `id=${g.getAttribute("data-id") ?? "-"} rects=${rects.length} svg=${Math.round(svgRect.width)}x${Math.round(svgRect.height)}`
+    );
+  };
+
+  /**
    * annotations 同步（D67）：marks ↔ rendition.annotations 增量 diff。
    * - 新增/换色：remove(cfi) + add（hash=cfi+type，换色必须重加）；
    * - 删除：remove；
@@ -1157,7 +1212,14 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // D102：**只加功能类 mark-hl，不加 mark-hl-{color}** ——
         // SVG <g> 一旦带上带 background 的颜色类，浏览器会按包围盒涂一整块实心
         // 矩形把正文盖住（滚动模式多行高亮时尤其明显）。EPUB 颜色由 fill 属性给出。
-        anno?.mark?.element?.classList.add("mark-hl");
+        const g = anno?.mark?.element as SVGGElement | null | undefined;
+        if (g) {
+          g.classList.add("mark-hl");
+          // D103：用正确的 rect 过滤重画。marks-pane 的 filteredRanges 会因
+          // 「被另一个矩形包含」而丢掉逐行框（跨块选区必现），只剩一个容器级
+          // 大矩形 → 整块实心色块盖住正文。详见 utils/epubHighlight.ts 顶部说明。
+          repaintHighlight(anno?.mark);
+        }
         map.set(m.id, { cfi: m.locator.cfi, color: m.color });
       } catch {
         // CFI 无法解析（章节内容变化/书籍损坏）：跳过，下次同步重试
@@ -1430,6 +1492,14 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // styles 物化在 SVG 属性上，不依赖 CSS）。
         rendition.hooks?.render?.register((view) => {
           const ctx = marksCtxRef.current;
+          // D103：补挂路径也要按正确算法重画 rect。hooks.render 触发时视图刚
+          // 完成排版，marks-pane 的原 render 可能仍按「包含去重」画出了大色块，
+          // 这里用视图上的 highlights 映射取回 Mark 实例再重画一次。
+          const viewAnys = view as unknown as {
+            highlights?: Record<string, { mark?: unknown }>;
+            contents?: { window?: Window };
+          };
+          const highlightMap = viewAnys.highlights ?? {};
           view.element?.querySelectorAll<SVGGElement>("svg g[data-id]").forEach((g) => {
             const id = g.getAttribute("data-id");
             const m = ctx?.marks.find((x) => x.id === id);
@@ -1438,6 +1508,16 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             if (!m) return;
             g.classList.remove("mark-hl-yellow", "mark-hl-green", "mark-hl-blue", "mark-hl-pink");
             g.classList.add("mark-hl");
+            // 按 data-id 找回对应的 Highlight 实例（epubjs 以 cfiRange 为键，
+            // 而遍历 DOM 只能拿到 id，故按 element 反查）
+            for (const key of Object.keys(highlightMap)) {
+              const entry = highlightMap[key];
+              const el = (entry?.mark as { element?: SVGGElement } | undefined)?.element;
+              if (el === g) {
+                repaintHighlight(entry.mark);
+                break;
+              }
+            }
           });
         });
 

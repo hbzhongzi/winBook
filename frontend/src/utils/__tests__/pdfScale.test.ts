@@ -97,16 +97,44 @@ describe("pdfScale v0.2.9 — 适配解析", () => {
     expect(r.scale).toBeCloseTo((800 - 14) / (2 * A4.pw), 4);
   });
 
-  it("缩放彻底不改变栏数：同一 columns 下各 fit/倍率均只铺对应页数", () => {
+  it("缩放彻底不改变栏数：任何 fit/倍率下栏数语义不变", () => {
     for (const fit of ["auto", "width", "height", "custom"] as PdfFit[]) {
       const r1 = resolvePdfScale(fit, 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 1);
       const r2 = resolvePdfScale(fit, 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
       // 单栏的 sw 是双栏 sw 的两倍（双栏要扣间距再对半分），但 fit 语义不变
       expect(r1.fit).toBe(r2.fit);
       expect(r2.sw).toBeLessThan(r1.sw);
-      if (fit === "custom") {
-        // 自定义倍率与栏数完全无关：这正是「缩放不打破栏数」的判据
-        expect(r1.scale).toBe(r2.scale);
+    }
+  });
+
+  // ===== D103：双栏 custom 倍率基准 =====
+  it("双栏 custom 100%：两页总宽恰好铺满可用宽（不再溢出裁切）", () => {
+    const r = resolvePdfScale("custom", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
+    const totalW = r.cssW * 2 + 14;
+    expect(Math.abs(totalW - BOX.cw)).toBeLessThanOrEqual(2); // 与适宽同宽
+    // 每页宽 = 可用宽的一半
+    expect(r.cssW).toBeCloseTo((BOX.cw - 14) / 2, 0);
+  });
+
+  it("双栏 custom 50%：每页宽 = 可用宽的一半 × 50%，不溢出容器", () => {
+    const r = resolvePdfScale("custom", 50, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
+    const usableHalf = (BOX.cw - 14) / 2;
+    expect(r.cssW).toBe(Math.round(usableHalf * 0.5));
+    expect(r.cssW * 2 + 14).toBeLessThan(BOX.cw);
+  });
+
+  it("单栏 custom 保持 v0.2.9 原口径（100% = 页面基准宽，存量零回归）", () => {
+    const r = resolvePdfScale("custom", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 1);
+    expect(r.scale).toBe(1);
+    expect(r.cssW).toBe(Math.round(A4.pw));
+  });
+
+  it("双栏 custom 在任意倍率下两页总宽都不超过容器（放大不破栏的前提）", () => {
+    for (const z of [50, 75, 100, 125, 150, 200, 400]) {
+      const r = resolvePdfScale("custom", z, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
+      // 100% 恰好铺满，>100% 允许溢出（用户主动放大），但 100% 及以下必须装得下
+      if (z <= 100) {
+        expect(r.cssW * 2 + 14).toBeLessThanOrEqual(BOX.cw + 2);
       }
     }
   });

@@ -17,6 +17,7 @@ import {
   PDF_PAGE_GAP,
   PDF_ZOOM_NUDGE,
   PDF_ZOOM_PRESETS,
+  clampPdfZoom,
   clampSpreadLeft,
   columnStep,
   fitRatio,
@@ -161,13 +162,17 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   const lastReportRef = useRef("");
   const [scalePct, setScalePct] = useState(0);
   const reportScale = useCallback((r: ResolvedPdfScale) => {
-    const pct = Math.round(r.scale * 100);
-    const fit = settingsRef.current.pdfFit;
-    const key = fit + ":" + pct;
+    // D103：custom 下 r.scale 是「相对页面基准 pw 的真实倍率」，双栏时它已含
+    // (baseW/pw) 的折算系数，直接 ×100 上报会得到与用户设定值不符的数字
+    // （双栏 100% 会显示成 ~55%），且 handleZoomNudge 会拿它当基点把倍率算飞。
+    // 故 custom 一律上报用户设定的 zoom，其余适配方式仍报实际倍率。
+    const s = settingsRef.current;
+    const pct = r.fit === "custom" ? clampPdfZoom(s.pdfZoom) : Math.round(r.scale * 100);
+    const key = s.pdfFit + ":" + pct;
     setScalePct(pct);
     if (lastReportRef.current === key) return;
     lastReportRef.current = key;
-    viewRef.current?.onScaleReport?.({ pct, fit });
+    viewRef.current?.onScaleReport?.({ pct, fit: s.pdfFit });
   }, []);
 
   const cancelRenderTask = useCallback(() => {

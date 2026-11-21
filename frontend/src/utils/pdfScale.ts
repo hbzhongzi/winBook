@@ -103,13 +103,18 @@ export function currentDpr(enabled: boolean): number {
 }
 
 /**
- * 解析缩放（方案 §3.1 判定式，D102 增加 columns）。
+ * 解析缩放（方案 §3.1 判定式，D102 增加 columns，D103 修正双栏倍率基准）。
  *
  * - 单页：适宽 sw = cw/pw；适高 sh = ch/ph；auto = sw > sh ? width : height
  * - 双栏：两页并排，可用宽度要先扣掉页间距，故
  *     sw2 = (cw − gap) / (2·pw)、sh 不变，auto 依旧取「谁大用谁」
- * - custom 直接按倍率，与栏数无关（这正是「缩放不打破栏数」的关键：
- *   栏数不再参与适配判定，只影响一次铺几页）
+ * - custom：**倍率的 100% 基准随栏数走**
+ *     单栏 100% = 页面基准宽 pw（与 v0.2.9 完全一致，存量零回归）
+ *     双栏 100% = 双栏可用宽的一半 (cw − gap) / 2
+ *   D103 根因（用户截图实证）：此前 custom 恒用 pw × zoom/100，双栏时两页总宽
+ *   变成「2 页 × 单栏基准」，必然横向溢出容器、左右都被裁切，且一放大缩小就破栏。
+ *   现在双栏 100% 恰好两页铺满，「100% 就是看着刚刚好」成为一致直觉。
+ *   关键：栏数只改变**倍率基准**，不改变「一次铺几页」——因此怎么缩放都不破栏。
  * - 容器未测量（cw/ch ≤ 0）或页面尺寸非法时 scale = 0，调用方据此跳过渲染
  */
 export function resolvePdfScale(
@@ -134,8 +139,12 @@ export function resolvePdfScale(
   const normFit = migratePdfFit(fit);
   const resolved: ResolvedPdfScale["fit"] =
     normFit === "auto" ? (sw > sh ? "width" : "height") : normFit === "custom" ? "custom" : (normFit as "width" | "height");
-  const scale =
-    resolved === "width" ? sw : resolved === "height" ? sh : clampPdfZoom(zoom) / 100;
+  // 自定义倍率（D103）：100% 的基准宽 = 该栏数下「每页的可用宽」。
+  // 单栏 = cw（等价于传统 pw×zoom/100 只在 pw≈cw 时……故单栏保持 pw 基准以免存量跳动）
+  // 双栏 = (cw − gap)/2，使 100% 恰好两页铺满。
+  const baseW = cols === 2 ? (okBox ? usableW / 2 : pw) : pw;
+  const sCustom = okPage ? (baseW / pw) * (clampPdfZoom(zoom) / 100) : 0;
+  const scale = resolved === "width" ? sw : resolved === "height" ? sh : sCustom;
   const cssW = okPage ? Math.round(pw * scale) : 0;
   const cssH = okPage ? Math.round(ph * scale) : 0;
   return {
