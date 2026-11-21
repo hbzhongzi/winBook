@@ -6,6 +6,7 @@ import { base64ToUint8Array } from "../utils/base64";
 import type { ReaderMode, Settings } from "../utils/settings";
 import { setReaderCommandHandler, scrollStepFor } from "../utils/readerCommands";
 import type { PositionReport } from "../utils/library";
+import type { MarksContext } from "./marksContext";
 import {
   FIT_LABELS,
   PDF_FITS,
@@ -62,9 +63,11 @@ type Props = {
   onReady?: () => void;
   /** v0.2.9：视图交互回调（缩放上报与变更请求，App 统一持久化） */
   pdfView?: PdfViewHandlers;
+  /** v0.3.0 标记上下文（App 组装、BookViewer 透传）；缺失时纯阅读无标记 */
+  marksCtx?: MarksContext;
 };
 
-export default function PdfViewer({ dataBase64, mode, initialPage, settings, getterRef, onReady, pdfView }: Props) {
+export default function PdfViewer({ dataBase64, mode, initialPage, settings, getterRef, onReady, pdfView, marksCtx }: Props) {
   const isScroll = mode === "scroll"; // true=连续滚动；false=单页翻页（默认）
   const pdfRef = useRef<PDFDocumentProxy | null>(null);
   /** 各 canvas 在飞渲染任务（按 canvas 维度登记）：翻页/设置变化/二次打开时，重渲前先 await
@@ -636,6 +639,64 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     };
   }, [getterRef, pageCount, current, scrollCurrent, isScroll]);
 
+  // ===== v0.3.0 标记：页级标记 + 页码跳转 =====
+  // D73：PdfViewer 为纯 canvas 渲染（无 pdfjs textLayer），页内 quote 重匹配高亮
+  // 本版不做（in-text 高亮列后续候选）；标记退化为「页级」——text 空、非 idea、
+  // 定位器只记页码，面板按「第 N 页」分组、导出含位置脚注。
+  const marksCtxRef = useRef(marksCtx);
+  marksCtxRef.current = marksCtx;
+  const jumpNonceRef = useRef(-1);
+
+  /** 「标记本页」：直接落库（默认色），toast 由 App 的 onAdd 包装出 */
+  const onMarkPage = useCallback(() => {
+    const ctx = marksCtxRef.current;
+    if (!ctx?.enabled) return;
+    const page = isScroll ? scrollCurrentRef.current : current;
+    if (page < 1 || pageCountRef.current <= 0) return;
+    ctx.onAdd({ color: ctx.defaultColor, text: "", locator: { kind: "pdf", page, quote: "" } });
+  }, [isScroll, current]);
+
+  /** 当前页是否已有标记（按钮 active 态；读 prop 保证 marks 变更时随渲染更新） */
+  const markPage = isScroll ? scrollCurrent : current;
+  const pageMarked =
+    marksCtx?.marks.some((m) => m.locator.kind === "pdf" && m.locator.page === markPage) ?? false;
+
+  // 跳转目标（§4.16/F35）：面板点条目 → 目标页置顶/翻页 + 页槽闪烁 1.6s。
+  // 滚动模式复用初始恢复的重钉机制：未测量页先用估算高度落位，真实高度回填后再校正。
+  useEffect(() => {
+    const ctx = marksCtxRef.current;
+    const jt = ctx?.jumpTarget ?? null;
+    if (!jt || jt.nonce === jumpNonceRef.current) return;
+    jumpNonceRef.current = jt.nonce;
+    const loc = jt.mark.locator;
+    if (loc.kind !== "pdf") {
+      ctx?.onJumpDone();
+      return;
+    }
+    const page = Math.min(Math.max(Math.round(loc.page), 1), Math.max(1, pageCountRef.current));
+    if (isScroll) {
+      const root = scrollRef.current;
+      if (root) {
+        initialRecoverRef.current = { active: true, target: page };
+        root.scrollTo({ top: cumulativeTop(page - 1) });
+      }
+      scrollCurrentRef_set(page);
+    } else {
+      setCurrent(page);
+    }
+    const flash = () => {
+      // 滚动模式闪页槽（canvas 虚拟化，槽恒在 DOM）；单页模式闪 .pdf-page 宿主
+      const el = isScroll ? slotRefs.current[page - 1] : hostRef.current;
+      if (!el) return false;
+      el.classList.add("mark-flash");
+      window.setTimeout(() => el.classList.remove("mark-flash"), 1600);
+      return true;
+    };
+    if (!flash()) window.setTimeout(() => { if (!flash()) window.setTimeout(flash, 500); }, 300);
+    ctx?.onJumpDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marksCtx?.jumpTarget]);
+
   // ===== v0.2.9：Ctrl+滚轮调倍率（阅读区任意位置）=====
   useEffect(() => {
     const el = isScroll ? scrollRef.current : areaRef.current;
@@ -743,6 +804,22 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
             })}
           </div>
         </div>
+        {/* v0.3.0 标记本页（D73 页级）：滚动模式无控制条，用悬浮按钮 */}
+        {marksCtx?.enabled && (
+          <button
+            type="button"
+            className={"pdf-mark-fab" + (pageMarked ? " marked" : "")}
+            onClick={onMarkPage}
+            disabled={pageCount <= 0}
+            title="把当前页加入标记记录（页级标记）"
+            aria-label="标记本页"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>标记本页</span>
+          </button>
+        )}
       </section>
     );
   }
@@ -828,6 +905,21 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
             "载入中…"
           )}
         </span>
+        {/* v0.3.0 标记本页（D73 页级）：无文本层，页级标记即本版 PDF 全部标记能力 */}
+        {marksCtx?.enabled && (
+          <button
+            type="button"
+            className={"pg-btn pg-mark" + (pageMarked ? " marked" : "")}
+            onClick={onMarkPage}
+            disabled={pageCount <= 0}
+            title="把当前页加入标记记录（页级标记）"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            标记本页
+          </button>
+        )}
         <button
           type="button"
           className="pg-btn"
