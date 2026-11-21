@@ -1005,6 +1005,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     // stage（.epub-container）由 epubjs 在 renderTo/display 时创建，
     // 滚动补偿要在 display 之后再绑定，卸载时回滚。
     let unwireScroll: (() => void) | null = null;
+    // 窗口管理器引用（D80）：必须在首次 display 之前就存在，好让提前接管的
+    // check() 闭包能访问到稍后创建的 wm。display 后再绑定 wmRef = wm。
+    let wmRef: WindowManager | null = null;
 
     (async () => {
       clearEpubDiag();
@@ -1174,6 +1177,26 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           onChapterChangeRef.current?.(items[0].label);
         }
 
+        // manager 在 rendition.started 后已存在；两种模式都引用它（applyResume 恢复用）。
+        const manager: EpubManager | null = (rendition.manager as EpubManager | null) ?? null;
+
+        // D80 关键修复：必须在首次 display 之前接管 continuous manager 的 fill/check。
+        // epubjs 的 rendition.display() → manager.display() → .then(() => this.fill())，
+        // continuous 的 fill() 递归 check() 会 Promise.all(各章 display) 补齐视口；
+        // 首章常不在 spine 0（本书在 index 12），补齐过程任一章渲染卡住 → display()
+        // 永不 settle → 10s 超时被误判「EPUB 解析失败」（真机日志 DISPLAY_START 后超时）。
+        // 原代码在 display 之后才 patch，第一次 display 仍走原生 fill，正是卡死点。
+        // 这里提前 patch 为 no-op fill + 委托 wm 的 check（wm 稍后创建，经 wmRef 共享）。
+        if (!isPage && manager) {
+          const managerAny = manager as unknown as Record<string, unknown>;
+          epubDiag("PATCH_FILL_CHECK", "before display");
+          managerAny.fill = () => Promise.resolve();
+          managerAny.check = () => {
+            wmRef?.scheduleSync();
+            return Promise.resolve(false);
+          };
+        }
+
         // 初始定位到目录首章（两种模式都要先 display 首章），而不是 book.spine.start
         // （spine 首项常是目录里没有的封面/版权页/书内目录页）。真书《关键对话》
         // spine 顺序为 cover → TOC → 正文，落到目录首章更符合阅读直觉。
@@ -1183,21 +1206,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         epubDiag("DISPLAY_OK");
         if (destroyed) return;
 
-        // manager 在 rendition.started 后已存在；两种模式都引用它（applyResume 恢复用）。
-        const manager: EpubManager | null = (rendition.manager as EpubManager | null) ?? null;
-
         if (!isPage) {
           // ===== 纵向滚动（continuous + 自定义章节窗口化，与现状一致）=====
           if (!manager) throw new Error("EPUB manager unavailable");
-          const managerAny = manager as unknown as Record<string, unknown>;
-          let wmRef: WindowManager | null = null;
-          // 接管章节加载：屏蔽 ContinuousViewManager 自带的 fill()/check() 补章，
-          // 改由窗口管理器按「跳过非正文 spine 项」邻接补齐（见 chapterWindow.ts）。
-          managerAny.fill = () => Promise.resolve();
-          managerAny.check = () => {
-            wmRef?.scheduleSync();
-            return Promise.resolve(false);
-          };
 
           // 建立「spine section.index → 侧栏下标」映射（用于过滤非正文 spine 项）。
           {
