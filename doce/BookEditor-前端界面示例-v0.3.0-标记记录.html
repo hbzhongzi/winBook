@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BookEditor 前端界面示例 · v0.3.0 标记记录</title>
+<style>
+  :root {
+    --bg: #e9edf3;
+    --window-bg: #ffffff;
+    --titlebar-bg: #f3f5f8;
+    --border: #d8dee7;
+    --border-soft: #e5e9f0;
+    --text: #1f2937;
+    --text-2: #6b7280;
+    --text-3: #94a3b8;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --active-bg: #eff6ff;
+    --error-bg: #fef2f2;
+    --error-border: #fecaca;
+    --error-text: #b91c1c;
+    --ok-bg: #ecfdf5;
+    --ok-border: #a7f3d0;
+    --ok-text: #047857;
+    --badge-epub-bg: #dcfce7; --badge-epub-text: #15803d;
+    --stage-bg: #dfe4ec;
+    --page-shadow: 0 2px 14px rgba(15, 23, 42, .18);
+    --hl-yellow: #fef08a; --hl-yellow-line: #ca8a04;
+    --hl-green: #bbf7d0;  --hl-green-line: #16a34a;
+    --hl-blue: #bfdbfe;   --hl-blue-line: #2563eb;
+    --hl-pink: #fbcfe8;   --hl-pink-line: #db2777;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1320px; margin: 0 auto; padding: 34px 20px 56px; }
+
+  /* ===== 示例页头 ===== */
+  .demo-header h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; }
+  .demo-header .sub { font-size: 13px; color: var(--text-2); margin: 0 0 14px; line-height: 1.75; }
+  .tech-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .tech-chips span {
+    font-size: 11px; color: var(--text-2); background: #fff;
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  }
+  .tech-chips span.hl { color: var(--accent); border-color: #bfdbfe; background: var(--active-bg); }
+
+  /* ===== 演示控制条（驱动下方主窗口 mockup） ===== */
+  .demo-controls {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 18px; font-size: 12px; color: var(--text-2);
+  }
+  .demo-controls .lbl { font-weight: 600; color: var(--text); }
+  .dc-btn {
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    border-radius: 7px; padding: 6px 12px; font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  .dc-btn:hover { border-color: #bfdbfe; color: var(--accent); background: var(--active-bg); }
+  .dc-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .dc-btn.primary:hover { background: var(--accent-hover); }
+  .dc-hint { margin-left: auto; color: var(--text-3); font-size: 11px; }
+
+  .window {
+    position: relative; background: var(--window-bg);
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, .14);
+    overflow: hidden; width: fit-content; max-width: 100%;
+  }
+  .titlebar {
+    height: 42px; display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 14px; background: var(--titlebar-bg);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .titlebar .app-icon { color: var(--accent); display: flex; }
+  .titlebar .title { font-size: 13px; }
+  .titlebar .mockup-tag {
+    font-size: 10px; color: var(--text-3); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 6px; letter-spacing: .5px;
+  }
+  .window-controls { margin-left: auto; display: flex; gap: 2px; }
+  .window-controls button {
+    width: 34px; height: 28px; border: none; background: transparent;
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+    color: var(--text-2); cursor: pointer;
+  }
+  .window-controls button.close:hover { background: #e81123; color: #fff; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; border-bottom: 1px solid var(--border-soft);
+  }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 8px 15px; font-size: 13px; font-family: inherit; cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-icon {
+    width: 34px; height: 34px; flex: none; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); background: #fff; border-radius: 8px;
+    color: var(--text-2); cursor: pointer; position: relative;
+  }
+  .btn-icon:hover { background: #f1f5f9; color: var(--accent); }
+  .btn-icon.on { border-color: #bfdbfe; color: var(--accent); background: var(--active-bg); }
+  .btn-icon .badge {
+    position: absolute; top: -7px; right: -7px; min-width: 17px; height: 17px;
+    border-radius: 999px; background: var(--accent); color: #fff;
+    font-size: 10px; line-height: 17px; text-align: center; padding: 0 4px;
+    border: 2px solid #fff; font-variant-numeric: tabular-nums;
+  }
+  .book-meta { margin-left: auto; font-size: 12px; color: var(--text-3); }
+
+  .mode-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .mode-opt {
+    border: none; background: #fff; color: var(--text-2); font-family: inherit;
+    font-size: 12px; padding: 7px 13px; cursor: pointer;
+  }
+  .mode-opt + .mode-opt { border-left: 1px solid var(--border); }
+  .mode-opt.active { background: var(--accent); color: #fff; }
+
+  /* ===== 应用主体：阅读区 + 标记面板 ===== */
+  .app-body { display: flex; align-items: stretch; height: 560px; }
+  .reader-stage {
+    flex: 1; min-width: 0; background: var(--stage-bg); overflow: auto;
+    display: flex; justify-content: center; padding: 24px; position: relative;
+  }
+  .book-page {
+    width: 620px; flex: none; background: #fff; color: #1f2937;
+    box-shadow: var(--page-shadow); padding: 40px 48px; height: fit-content;
+    font-family: "Microsoft YaHei", "SimSun", serif; position: relative;
+  }
+  .bp-chapter { font-size: 12px; color: #9ca3af; text-align: center; letter-spacing: 2px; margin-bottom: 6px; }
+  .bp-title { font-size: 16px; font-weight: 600; text-align: center; letter-spacing: 3px; margin: 0 0 22px; }
+  .bp-p { font-size: 13.5px; line-height: 2.05; text-indent: 2em; margin: 0 0 12px; text-align: justify; }
+  .bp-foot {
+    position: absolute; left: 48px; right: 48px; bottom: 18px;
+    font-size: 10px; color: #9ca3af; display: flex; justify-content: space-between;
+  }
+  .bp-sel {
+    background: rgba(37, 99, 235, .18); border-bottom: 2px solid var(--accent);
+    border-radius: 2px; padding: 0 1px;
+  }
+
+  /* ===== 高亮（标记） ===== */
+  .mark-hl {
+    border-radius: 2px; padding: 0 1px; cursor: pointer;
+    transition: filter .15s;
+  }
+  .mark-hl:hover { filter: brightness(.96); }
+  .mark-hl-yellow { background: var(--hl-yellow); box-shadow: inset 0 -2px 0 var(--hl-yellow-line); }
+  .mark-hl-green  { background: var(--hl-green);  box-shadow: inset 0 -2px 0 var(--hl-green-line); }
+  .mark-hl-blue   { background: var(--hl-blue);   box-shadow: inset 0 -2px 0 var(--hl-blue-line); }
+  .mark-hl-pink   { background: var(--hl-pink);   box-shadow: inset 0 -2px 0 var(--hl-pink-line); }
+  .mark-hl.mark-flash { animation: markRing 1.6s ease; }
+  @keyframes markRing {
+    0%   { box-shadow: inset 0 -2px 0 rgba(0,0,0,.28), 0 0 0 0 rgba(37,99,235,.55); }
+    60%  { box-shadow: inset 0 -2px 0 rgba(0,0,0,.28), 0 0 0 8px rgba(37,99,235,0); }
+    100% { box-shadow: inset 0 -2px 0 rgba(0,0,0,.28), 0 0 0 0 rgba(37,99,235,0); }
+  }
+
+  /* ===== 划词工具条 ===== */
+  .mark-toolbar {
+    position: absolute; z-index: 40; display: flex; align-items: center; gap: 6px;
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .2); padding: 6px 8px;
+    animation: popIn .14s ease;
+  }
+  .mark-toolbar .tt-label { font-size: 11px; color: var(--text-3); padding: 0 2px; }
+  .dot {
+    width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+    border: 2px solid #fff; box-shadow: 0 0 0 1px var(--border); padding: 0;
+  }
+  .dot:hover { transform: scale(1.12); }
+  .dot-yellow { background: #facc15; } .dot-green { background: #4ade80; }
+  .dot-blue { background: #60a5fa; }  .dot-pink { background: #f472b6; }
+  .tt-btn {
+    border: none; background: transparent; border-radius: 6px; cursor: pointer;
+    font-size: 12px; color: var(--text); font-family: inherit; padding: 5px 8px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .tt-btn:hover { background: #f1f5f9; color: var(--accent); }
+  .tt-btn.danger:hover { background: var(--error-bg); color: var(--error-text); }
+  .tt-sep { width: 1px; height: 18px; background: var(--border-soft); }
+
+  /* ===== 高亮点击气泡 ===== */
+  .mark-bubble {
+    position: absolute; z-index: 41; width: 260px;
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .2); padding: 10px 12px;
+    animation: popIn .14s ease;
+  }
+  .mark-bubble .mb-quote { font-size: 12px; color: var(--text-2); line-height: 1.6; margin-bottom: 6px; }
+  .mark-bubble .mb-note {
+    font-size: 12px; color: var(--text); line-height: 1.6;
+    border-left: 3px solid var(--accent); background: var(--active-bg);
+    border-radius: 0 6px 6px 0; padding: 6px 8px; margin-bottom: 8px;
+  }
+  .mark-bubble .mb-acts { display: flex; gap: 6px; justify-content: flex-end; }
+
+  /* ===== 标记记录面板 ===== */
+  .marks-panel {
+    width: 340px; flex: none; border-left: 1px solid var(--border-soft);
+    display: flex; flex-direction: column; background: #fff; min-height: 0;
+  }
+  .mp-head {
+    display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .mp-head .t { font-size: 14px; font-weight: 600; }
+  .mp-head .n { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .mp-head .sp { margin-left: auto; display: flex; gap: 6px; }
+  .mp-tools { padding: 10px 14px; border-bottom: 1px solid var(--border-soft); }
+  .mp-search {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 12px; font-family: inherit; outline: none; color: var(--text);
+  }
+  .mp-search:focus { border-color: var(--accent); }
+  .mp-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .chip {
+    border: 1px solid var(--border); background: #fff; color: var(--text-2);
+    border-radius: 999px; font-size: 11px; padding: 3px 10px; cursor: pointer; font-family: inherit;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .chip:hover { border-color: #bfdbfe; color: var(--accent); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip .cdot { width: 8px; height: 8px; border-radius: 50%; }
+  .chip .cnt { font-variant-numeric: tabular-nums; opacity: .75; }
+  .mp-list { flex: 1; overflow: auto; padding: 6px 0 10px; }
+  .mp-group {
+    font-size: 11px; color: var(--text-3); padding: 10px 14px 4px;
+    display: flex; align-items: center; gap: 6px; letter-spacing: .5px;
+  }
+  .mp-group .gc { font-variant-numeric: tabular-nums; }
+  .mp-group.idea { color: var(--accent); }
+  .mark-item {
+    position: relative; display: flex; gap: 9px; padding: 9px 14px; cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  .mark-item:hover { background: #f8fafc; }
+  .mark-item .bar { width: 4px; border-radius: 3px; flex: none; }
+  .bar-yellow { background: var(--hl-yellow-line); } .bar-green { background: var(--hl-green-line); }
+  .bar-blue { background: var(--hl-blue-line); }   .bar-pink { background: var(--hl-pink-line); }
+  .mark-item .body { flex: 1; min-width: 0; }
+  .mark-item .mi-text {
+    font-size: 12.5px; color: var(--text); line-height: 1.65;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .mark-item .mi-text.idea { color: var(--accent); font-weight: 600; }
+  .mark-item .mi-note {
+    font-size: 12px; color: var(--text-2); line-height: 1.6; margin-top: 4px;
+    border-left: 2px solid var(--border); padding-left: 8px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .mark-item .mi-meta {
+    display: flex; align-items: center; gap: 8px; margin-top: 5px;
+    font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums;
+  }
+  .mark-item .mi-more {
+    position: absolute; top: 8px; right: 8px; width: 24px; height: 24px;
+    border: none; background: transparent; border-radius: 6px; cursor: pointer;
+    color: var(--text-3); font-size: 14px; line-height: 1; display: none;
+    align-items: center; justify-content: center;
+  }
+  .mark-item:hover .mi-more { display: inline-flex; }
+  .mark-item .mi-more:hover { background: #eef2f7; color: var(--text); }
+  .mp-empty {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; color: var(--text-3); font-size: 12px; padding: 30px 20px; text-align: center;
+  }
+  .mp-empty .ic { color: #cbd5e1; }
+  .mp-foot {
+    display: flex; align-items: center; gap: 10px; padding: 9px 14px;
+    border-top: 1px solid var(--border-soft); font-size: 11px; color: var(--text-3);
+    background: #fafbfc; font-variant-numeric: tabular-nums;
+  }
+  .mp-foot .clear { margin-left: auto; }
+  .link-btn {
+    border: none; background: transparent; color: var(--text-2); font-size: 11px;
+    font-family: inherit; cursor: pointer; padding: 3px 6px; border-radius: 5px;
+  }
+  .link-btn:hover { background: #eef2f7; color: var(--error-text); }
+
+  /* ===== 通用下拉菜单（复用 v0.2.8 口径） ===== */
+  .cat-menu {
+    position: absolute; z-index: 60; min-width: 132px; right: 10px; top: 34px;
+    background: #fff; border: 1px solid var(--border); border-radius: 9px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .18); padding: 5px;
+    animation: popIn .14s ease;
+  }
+  @keyframes popIn { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+  .menu-item {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    border: none; background: transparent; border-radius: 6px;
+    padding: 6px 8px; font-size: 12px; color: var(--text); cursor: pointer;
+    text-align: left; font-family: inherit;
+  }
+  .menu-item:hover { background: #f1f5f9; }
+  .menu-item.danger { color: var(--error-text); }
+  .menu-item.danger:hover { background: var(--error-bg); }
+
+  /* ===== 模态层（窗内） ===== */
+  .modal-mask {
+    position: absolute; inset: 0; background: rgba(15, 23, 42, .38);
+    display: flex; align-items: center; justify-content: center; z-index: 70;
+    animation: fadeIn .14s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .note-editor {
+    width: 460px; background: #fff; border-radius: 12px; overflow: hidden;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .3);
+  }
+  .ne-quote {
+    display: flex; gap: 9px; padding: 14px 16px 0;
+  }
+  .ne-quote .bar { width: 4px; border-radius: 3px; flex: none; background: var(--hl-yellow-line); }
+  .ne-quote .qt {
+    font-size: 12.5px; color: var(--text-2); line-height: 1.7;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ne-body { padding: 12px 16px 0; }
+  .ne-body textarea {
+    width: 100%; height: 110px; border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 11px; font-size: 13px; font-family: inherit; line-height: 1.7;
+    resize: none; outline: none; color: var(--text);
+  }
+  .ne-body textarea:focus { border-color: var(--accent); }
+  .ne-colors { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--text-2); }
+  .ne-foot {
+    display: flex; align-items: center; gap: 8px; padding: 12px 16px 14px;
+  }
+  .ne-foot .kbd-hint { font-size: 11px; color: var(--text-3); margin-right: auto; }
+  .btn {
+    border: 1px solid var(--border); background: #fff; color: var(--text);
+    border-radius: 7px; padding: 7px 15px; font-size: 12.5px; font-family: inherit; cursor: pointer;
+  }
+  .btn:hover { background: #f1f5f9; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: var(--accent-hover); }
+  .btn.danger { background: var(--error-text); border-color: var(--error-text); color: #fff; }
+  .btn.danger:hover { background: #991b1b; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* 导出弹层 */
+  .export-modal { width: 480px; background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 24px 60px rgba(15,23,42,.3); }
+  .export-modal h3 { margin: 0 0 12px; font-size: 14px; }
+  .ex-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; color: var(--text-2); }
+  .ex-row .rl { width: 64px; flex: none; }
+  .radio-pill {
+    border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px;
+    font-size: 12px; cursor: pointer; background: #fff; color: var(--text-2); font-family: inherit;
+  }
+  .radio-pill.active { border-color: var(--accent); color: var(--accent); background: var(--active-bg); }
+  .ex-preview {
+    width: 100%; height: 170px; border: 1px solid var(--border-soft); border-radius: 8px;
+    background: #fafbfc; padding: 10px 12px; font-size: 11.5px; line-height: 1.7;
+    font-family: Consolas, "Courier New", monospace; color: var(--text-2);
+    overflow: auto; white-space: pre; margin-bottom: 12px;
+  }
+  .ex-foot { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* 二次确认 */
+  .confirm-modal { width: 380px; background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 24px 60px rgba(15,23,42,.3); }
+  .confirm-modal h3 { margin: 0 0 10px; font-size: 14px; }
+  .confirm-modal p { margin: 0 0 4px; font-size: 12.5px; color: var(--text-2); line-height: 1.7; }
+  .confirm-modal .warn { color: var(--error-text); font-size: 12px; }
+  .confirm-modal .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+  .statusbar {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    padding: 6px 14px; border-top: 1px solid var(--border-soft);
+    background: #fafbfc; font-size: 12px; color: var(--text-2);
+  }
+  .statusbar .path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46%; }
+
+  /* toast */
+  .app-toast {
+    position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%);
+    background: rgba(17, 24, 39, .92); color: #fff; font-size: 12px;
+    border-radius: 8px; padding: 8px 16px; z-index: 90; white-space: nowrap;
+    animation: toastIn .18s ease;
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+  /* ===== 分区 ===== */
+  .demo-section { margin-top: 34px; }
+  .demo-section > h2 {
+    font-size: 15px; font-weight: 600; margin: 0 0 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .demo-section > h2 .no {
+    width: 22px; height: 22px; border-radius: 6px; background: var(--accent); color: #fff;
+    font-size: 12px; display: inline-flex; align-items: center; justify-content: center; flex: none;
+  }
+  .demo-section > .desc { font-size: 12.5px; color: var(--text-2); margin: 0 0 14px; line-height: 1.75; }
+
+  .state-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .state-card {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  }
+  .state-card .sc-stage {
+    position: relative; background: var(--stage-bg); padding: 34px 20px;
+    display: flex; align-items: center; justify-content: center; min-height: 150px;
+  }
+  .state-card .sc-cap {
+    padding: 10px 14px; border-top: 1px solid var(--border-soft); font-size: 12px; color: var(--text-2);
+  }
+  .state-card .sc-cap b { color: var(--text); font-weight: 600; }
+  .fake-paper {
+    width: 300px; background: #fff; border-radius: 3px; box-shadow: var(--page-shadow);
+    padding: 18px 20px; font-family: "Microsoft YaHei", "SimSun", serif;
+    font-size: 11.5px; line-height: 1.9; color: #374151; text-align: justify;
+  }
+  .fake-paper .fp-sel { background: rgba(37,99,235,.18); border-bottom: 2px solid var(--accent); border-radius: 2px; }
+
+  .settings-window { width: 760px; max-width: 100%; }
+  .set-dialog {
+    position: absolute; inset: 0; background: rgba(15, 23, 42, .38);
+    display: flex; align-items: center; justify-content: center; z-index: 65;
+  }
+  .set-panel { width: 620px; height: 420px; background: #fff; border-radius: 12px; display: flex; overflow: hidden; box-shadow: 0 24px 60px rgba(15,23,42,.3); }
+  .set-nav { width: 150px; flex: none; border-right: 1px solid var(--border-soft); padding: 14px 10px; background: #fafbfc; }
+  .set-nav-item { display: block; width: 100%; text-align: left; border: none; background: transparent; border-radius: 7px; padding: 8px 10px; font-size: 12.5px; color: var(--text-2); cursor: pointer; font-family: inherit; }
+  .set-nav-item.active { background: var(--active-bg); color: var(--accent); font-weight: 600; }
+  .set-body { flex: 1; padding: 18px 22px; overflow: auto; }
+  .set-body h3 { margin: 0 0 14px; font-size: 14px; }
+  .set-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+  .set-row .lab { font-size: 13px; }
+  .set-row .lab .d { display: block; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+  .set-row .ctl { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .switch {
+    width: 40px; height: 22px; border-radius: 999px; border: none; cursor: pointer;
+    background: #cbd5e1; position: relative; transition: background .15s; flex: none;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+    border-radius: 50%; background: #fff; transition: left .15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 20px; }
+
+  .demo-footer {
+    margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--text-3); line-height: 1.8;
+  }
+  @media (max-width: 980px) {
+    .state-grid { grid-template-columns: 1fr; }
+    .app-body { height: auto; flex-direction: column; }
+    .reader-stage { height: 420px; }
+    .marks-panel { width: auto; border-left: none; border-top: 1px solid var(--border-soft); height: 480px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="demo-header">
+    <h1>BookEditor 前端界面示例 · v0.3.0 标记记录</h1>
+    <p class="sub">
+      新增「标记记录」模块：阅读中划词高亮（四色）、随时记录阅读感悟、右侧面板按书管理（分组 / 筛选 / 搜索 / 跳转 / 导出）。
+      本页为可交互视觉基线，交互口径与 <code>doce/BookEditor-v0.3.0-标记记录模块开发方案.md</code> §4 逐条对应；
+      示例图书为虚构作品《溪畔笔记》，界面数据均为演示用途。
+    </p>
+    <div class="tech-chips">
+      <span class="hl">EPUB CFI / TXT 偏移 / PDF quote 定位</span>
+      <span class="hl">localStorage marks.v1</span>
+      <span class="hl">Ctrl+M 开关面板</span>
+      <span>epubjs annotations 高亮</span>
+      <span>Markdown 导出</span>
+      <span>纯前端 · Go 零改动</span>
+    </div>
+  </header>
+
+  <div class="demo-controls">
+    <span class="lbl">演示控制</span>
+    <button class="dc-btn primary" id="dcSelect">模拟划词（选中一句话）</button>
+    <button class="dc-btn" id="dcIdea">＋ 写想法</button>
+    <button class="dc-btn" id="dcExport">导出标记</button>
+    <button class="dc-btn" id="dcClear">清空本书…</button>
+    <span class="dc-hint">也可点击工具栏「标记」按钮或按 Ctrl+M 开关右侧面板；点击列表条目可跳转闪烁</span>
+  </div>
+
+  <!-- ===== ① 主窗口 mockup ===== -->
+  <div class="window" id="mainWindow">
+    <div class="titlebar">
+      <span class="app-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      </span>
+      <span class="title">BookEditor — 溪畔笔记.epub</span>
+      <span class="mockup-tag">MOCKUP</span>
+      <div class="window-controls">
+        <button title="最小化"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.2"/></svg></button>
+        <button title="最大化"><svg width="11" height="11" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+        <button class="close" title="关闭"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2"/></svg></button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn-primary">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M12 8v8M8 12h8"/></svg>
+        打开图书
+      </button>
+      <button class="btn-icon" title="书架">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      </button>
+      <div class="mode-seg">
+        <button class="mode-opt active">滚动</button>
+        <button class="mode-opt">翻页</button>
+      </div>
+      <button class="btn-icon" id="btnMarks" title="标记记录（Ctrl+M）">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        <span class="badge" id="marksBadge">6</span>
+      </button>
+      <button class="btn-icon" title="设置">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.09a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <span class="book-meta">EPUB · 约 42%</span>
+    </div>
+
+    <div class="app-body">
+      <div class="reader-stage" id="readerStage">
+        <div class="book-page" id="bookPage">
+          <div class="bp-chapter">第二章</div>
+          <h3 class="bp-title">溪 声</h3>
+          <p class="bp-p">回村那天正是薄暮。山影一层层沉下去，<span class="mark-hl mark-hl-yellow" data-mark-id="m1">溪声把夜色洗得发白，月亮从山脊后面升起来，像一枚被河水磨圆的旧硬币。</span>渡口的石板路被多年的脚步磨出了凹坑，雨水积在坑里，像谁随手撒下的碎镜子。</p>
+          <p class="bp-p"><span class="mark-hl mark-hl-green" data-mark-id="m2">所谓故乡，不过是有人替你记得你小时候的模样。</span>可这样的人，正在一个一个地少下去。</p>
+          <p class="bp-p">他数着水面上的星光，一颗，两颗，<span class="bp-sel" id="simSel">数到第十七颗时忘了数到过几。</span>夜风把柴油机的余温吹散，船底蹭着河床的细沙，发出很轻的、类似叹息的声响。</p>
+          <p class="bp-p">渡口的灯一盏盏亮起来，把水面烫出许多细小的窟窿。风从对岸吹来，带着稻草和湿泥的气味，我在埠头站着，忽然不敢喊他的名字——仿佛一喊，这十几年的光阴就会掉头冲我涌过来。</p>
+          <p class="bp-p">很多年后我才明白，那一夜他撑船送我，并非顺路。他从下游划上来，用了整整一个下午，只为在我开口之前，先摆出一副毫不在意的样子。我们家的人向来如此，把最重的话说得最轻，把最深的想念藏进一句「路上小心」。</p>
+          <div class="bp-foot"><span>溪畔笔记 · 人民文学出版社</span><span>— 38 —</span></div>
+        </div>
+
+        <!-- 划词工具条（默认隐藏，模拟划词后出现） -->
+        <div class="mark-toolbar" id="markToolbar" hidden>
+          <span class="tt-label">标记</span>
+          <button class="dot dot-yellow" data-color="yellow" title="黄"></button>
+          <button class="dot dot-green" data-color="green" title="绿"></button>
+          <button class="dot dot-blue" data-color="blue" title="蓝"></button>
+          <button class="dot dot-pink" data-color="pink" title="粉"></button>
+          <span class="tt-sep"></span>
+          <button class="tt-btn" id="ttNote">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            写感悟
+          </button>
+          <button class="tt-btn" id="ttCopy">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            复制
+          </button>
+        </div>
+
+        <!-- 高亮点击气泡（默认隐藏） -->
+        <div class="mark-bubble" id="markBubble" hidden>
+          <div class="mb-quote" id="bubbleQuote"></div>
+          <div class="mb-note" id="bubbleNote" hidden></div>
+          <div class="mb-acts">
+            <button class="btn" id="bubbleEdit">编辑</button>
+            <button class="btn" id="bubbleDel">删除</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 标记记录面板 -->
+      <aside class="marks-panel" id="marksPanel">
+        <div class="mp-head">
+          <span class="t">标记记录</span>
+          <span class="n" id="mpCount">6 条</span>
+          <span class="sp">
+            <button class="btn-icon" id="mpIdea" title="写想法" style="width:28px;height:28px">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <button class="btn-icon" id="mpExport" title="导出" style="width:28px;height:28px">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+            </button>
+            <button class="btn-icon" id="mpClose" title="关闭面板" style="width:28px;height:28px">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </span>
+        </div>
+        <div class="mp-tools">
+          <input class="mp-search" id="mpSearch" placeholder="搜索原文与感悟">
+          <div class="mp-chips" id="mpChips">
+            <button class="chip active" data-filter="all">全部 <span class="cnt">6</span></button>
+            <button class="chip" data-filter="noted">有感悟 <span class="cnt">4</span></button>
+            <button class="chip" data-filter="yellow"><span class="cdot" style="background:var(--hl-yellow-line)"></span>黄 <span class="cnt">2</span></button>
+            <button class="chip" data-filter="green"><span class="cdot" style="background:var(--hl-green-line)"></span>绿 <span class="cnt">1</span></button>
+            <button class="chip" data-filter="blue"><span class="cdot" style="background:var(--hl-blue-line)"></span>蓝 <span class="cnt">2</span></button>
+            <button class="chip" data-filter="pink"><span class="cdot" style="background:var(--hl-pink-line)"></span>粉 <span class="cnt">1</span></button>
+          </div>
+        </div>
+        <div class="mp-list" id="mpList"></div>
+        <div class="mp-foot">
+          <span id="mpFootText">共 6 条 · 有感悟 4 条</span>
+          <button class="link-btn clear" id="mpClear">清空本书…</button>
+        </div>
+      </aside>
+    </div>
+
+    <div class="statusbar">
+      <span class="path">D:\Books\溪畔笔记.epub</span>
+      <span id="statusDetail">第二章 溪声 · EPUB 纵向滚动 · 标记已开启</span>
+    </div>
+
+    <!-- 感悟编辑器模态 -->
+    <div class="modal-mask" id="noteModal" hidden>
+      <div class="note-editor">
+        <div class="ne-quote">
+          <span class="bar" id="neBar"></span>
+          <span class="qt" id="neQuote"></span>
+        </div>
+        <div class="ne-body">
+          <textarea id="neText" placeholder="记录这一刻的感悟…（Enter 保存，Shift+Enter 换行）"></textarea>
+          <div class="ne-colors">
+            <span>颜色</span>
+            <button class="dot dot-yellow" data-color="yellow"></button>
+            <button class="dot dot-green" data-color="green"></button>
+            <button class="dot dot-blue" data-color="blue"></button>
+            <button class="dot dot-pink" data-color="pink"></button>
+          </div>
+        </div>
+        <div class="ne-foot">
+          <span class="kbd-hint">留空保存 = 纯高亮</span>
+          <button class="btn" id="neCancel">取消</button>
+          <button class="btn primary" id="neSave">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 导出弹层 -->
+    <div class="modal-mask" id="exportModal" hidden>
+      <div class="export-modal">
+        <h3>导出标记</h3>
+        <div class="ex-row">
+          <span class="rl">格式</span>
+          <button class="radio-pill active">Markdown（.md）</button>
+          <button class="radio-pill" style="opacity:.5;cursor:not-allowed" title="本版仅 Markdown（D71）">JSON</button>
+        </div>
+        <div class="ex-row">
+          <span class="rl">范围</span>
+          <button class="radio-pill active" id="exScopeBook">当前图书</button>
+          <button class="radio-pill" id="exScopeAll">全部图书</button>
+        </div>
+        <textarea class="ex-preview" id="exPreview" readonly></textarea>
+        <div class="ex-foot">
+          <button class="btn" id="exCancel">取消</button>
+          <button class="btn" id="exCopy">复制到剪贴板</button>
+          <button class="btn primary" id="exDownload">下载 .md</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 清空二次确认 -->
+    <div class="modal-mask" id="clearModal" hidden>
+      <div class="confirm-modal">
+        <h3>清空本书标记</h3>
+        <p>将删除《<b id="clearBook">溪畔笔记</b>》的全部 <b id="clearCount">6</b> 条标记与感悟。</p>
+        <p class="warn">此操作不可恢复；书架记录不受影响。</p>
+        <div class="foot">
+          <button class="btn" id="clearCancel">返回</button>
+          <button class="btn danger" id="clearOk">确认清空</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="app-toast" id="toast" hidden></div>
+  </div>
+
+  <!-- ===== ② 划词工具条与编辑器四态 ===== -->
+  <section class="demo-section">
+    <h2><span class="no">2</span>划词工具条 · 感悟编辑器 · 高亮气泡（四态）</h2>
+    <p class="desc">选中正文 ≥ 8 字符时工具条浮于选区上方（空间不足翻到下方）；在已有高亮上再次选词，工具条切换为「改色 / 写感悟 / 删除」三态；点击正文高亮弹出摘要气泡。以下为四种状态的静态基线。</p>
+    <div class="state-grid">
+      <div class="state-card">
+        <div class="sc-stage">
+          <div class="fake-paper">他数着水面上的星光，一颗，两颗，<span class="fp-sel">数到第十七颗时忘了数到过几。</span>夜风把柴油机的余温吹散，船底蹭着河床的细沙。</div>
+          <div class="mark-toolbar" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);animation:none">
+            <span class="tt-label">标记</span>
+            <button class="dot dot-yellow"></button><button class="dot dot-green"></button>
+            <button class="dot dot-blue"></button><button class="dot dot-pink"></button>
+            <span class="tt-sep"></span>
+            <button class="tt-btn">写感悟</button>
+            <button class="tt-btn">复制</button>
+          </div>
+        </div>
+        <div class="sc-cap"><b>状态 A · 新选词</b>：四色圆点 + 写感悟 + 复制。点色点即落库高亮并收回工具条；「复制」复制原文（复用 Ctrl+C 文案链路）。</div>
+      </div>
+      <div class="state-card">
+        <div class="sc-stage">
+          <div class="fake-paper"><span class="mark-hl mark-hl-yellow">所谓故乡，不过是有人替你记得你小时候的模样。</span>可这样的人，正在一个一个地少下去。</div>
+          <div class="mark-toolbar" style="position:absolute;top:14px;left:50%;transform:translateX(-50%);animation:none">
+            <span class="tt-label">改色</span>
+            <button class="dot dot-yellow"></button><button class="dot dot-green"></button>
+            <button class="dot dot-blue"></button><button class="dot dot-pink"></button>
+            <span class="tt-sep"></span>
+            <button class="tt-btn">写感悟</button>
+            <button class="tt-btn danger">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+              删除
+            </button>
+          </div>
+        </div>
+        <div class="sc-cap"><b>状态 B · 已标记上再选</b>：选区与既有高亮重叠时出现。删除直接生效并 toast 提示，不二次确认（与书架单本 ✕ 同口径）。</div>
+      </div>
+      <div class="state-card">
+        <div class="sc-stage">
+          <div class="note-editor" style="box-shadow:0 10px 30px rgba(15,23,42,.2)">
+            <div class="ne-quote">
+              <span class="bar" style="background:var(--hl-blue-line)"></span>
+              <span class="qt">他把最后一条船缆解开时，手抖得像风里的芦苇。</span>
+            </div>
+            <div class="ne-body">
+              <textarea style="height:74px">父亲的形象从这里开始立起来，与前文「从不夸口」形成对位。</textarea>
+              <div class="ne-colors"><span>颜色</span>
+                <button class="dot dot-yellow"></button><button class="dot dot-green"></button>
+                <button class="dot dot-blue"></button><button class="dot dot-pink"></button>
+              </div>
+            </div>
+            <div class="ne-foot">
+              <span class="kbd-hint">Enter 保存 · Esc 取消</span>
+              <button class="btn">取消</button><button class="btn primary">保存</button>
+            </div>
+          </div>
+        </div>
+        <div class="sc-cap"><b>状态 C · 写感悟编辑器</b>：原文引用块 ≤ 3 行 + 多行文本域（自动聚焦）+ 改色。新建与编辑复用同一组件；留空保存 = 纯高亮。</div>
+      </div>
+      <div class="state-card">
+        <div class="sc-stage">
+          <div class="fake-paper"><span class="mark-hl mark-hl-yellow">溪声把夜色洗得发白，月亮从山脊后面升起来，像一枚被河水磨圆的旧硬币。</span>渡口的石板路被多年的脚步磨出了凹坑。</div>
+          <div class="mark-bubble" style="position:absolute;bottom:12px;right:14px;animation:none">
+            <div class="mb-quote">溪声把夜色洗得发白，月亮从山脊后面升起来，像一枚被河水磨圆的旧硬币。</div>
+            <div class="mb-note">开篇的比喻就把「旧」字立住了——整本书都在写旧物与旧人。</div>
+            <div class="mb-acts"><button class="btn">编辑</button><button class="btn">删除</button></div>
+          </div>
+        </div>
+        <div class="sc-cap"><b>状态 D · 点击高亮气泡</b>：原文 1 行 + 感悟预览 ≤ 2 行 + 编辑 / 删除。无感悟的纯高亮只显示原文与操作。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ③ 面板细节 ===== -->
+  <section class="demo-section">
+    <h2><span class="no">3</span>标记记录面板 · 分组 / 筛选 / 搜索 / 更多菜单</h2>
+    <p class="desc">面板默认 340px 右侧抽屉。列表按章节分组（独立想法置顶「想法」组），组内按更新时间倒序；筛选 chips 与关键词搜索为「与」关系；条目 hover 出现「⋯」更多菜单（跳转 / 编辑 / 复制 / 删除）。下图为面板局部放大基线。</p>
+    <div class="state-grid" style="grid-template-columns: 380px 1fr">
+      <div class="state-card">
+        <div class="sc-stage" style="padding:0;min-height:0;align-items:stretch">
+          <div class="marks-panel" style="width:100%;height:430px;border-left:none">
+            <div class="mp-head" style="border-top:none">
+              <span class="t">标记记录</span><span class="n">6 条</span>
+              <span class="sp">
+                <button class="btn-icon" style="width:28px;height:28px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+                <button class="btn-icon" style="width:28px;height:28px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></button>
+              </span>
+            </div>
+            <div class="mp-tools">
+              <input class="mp-search" placeholder="搜索原文与感悟">
+              <div class="mp-chips">
+                <button class="chip active">全部 6</button>
+                <button class="chip">有感悟 4</button>
+                <button class="chip"><span class="cdot" style="background:var(--hl-yellow-line)"></span>黄 2</button>
+                <button class="chip"><span class="cdot" style="background:var(--hl-green-line)"></span>绿 1</button>
+              </div>
+            </div>
+            <div class="mp-list">
+              <div class="mp-group idea">◆ 想法 <span class="gc">1</span></div>
+              <div class="mark-item">
+                <span class="bar bar-blue"></span>
+                <div class="body">
+                  <div class="mi-text idea">◆ 读到这里忽然想起小时候外婆家的渡口。原来「等待」也可以是一种职业。</div>
+                  <div class="mi-meta"><span>5 小时前</span></div>
+                </div>
+                <button class="mi-more">⋯</button>
+              </div>
+              <div class="mp-group">第二章 溪声 <span class="gc">2</span></div>
+              <div class="mark-item">
+                <span class="bar bar-yellow"></span>
+                <div class="body">
+                  <div class="mi-text">溪声把夜色洗得发白，月亮从山脊后面升起来，像一枚被河水磨圆的旧硬币。</div>
+                  <div class="mi-note">开篇的比喻就把「旧」字立住了——整本书都在写旧物与旧人。</div>
+                  <div class="mi-meta"><span>5 小时前</span><span>·</span><span>第二章</span></div>
+                </div>
+                <button class="mi-more">⋯</button>
+                <div class="cat-menu">
+                  <button class="menu-item">跳转到原文</button>
+                  <button class="menu-item">编辑</button>
+                  <button class="menu-item">复制原文</button>
+                  <button class="menu-item danger">删除</button>
+                </div>
+              </div>
+              <div class="mark-item">
+                <span class="bar bar-green"></span>
+                <div class="body">
+                  <div class="mi-text">所谓故乡，不过是有人替你记得你小时候的模样。</div>
+                  <div class="mi-meta"><span>昨天</span></div>
+                </div>
+                <button class="mi-more">⋯</button>
+              </div>
+              <div class="mp-group">第三章 旧缆 <span class="gc">2</span></div>
+              <div class="mark-item">
+                <span class="bar bar-blue"></span>
+                <div class="body">
+                  <div class="mi-text">他把最后一条船缆解开时，手抖得像风里的芦苇。</div>
+                  <div class="mi-note">父亲的形象从这里开始立起来，与前文「从不夸口」形成对位。</div>
+                  <div class="mi-meta"><span>3 天前</span></div>
+                </div>
+                <button class="mi-more">⋯</button>
+              </div>
+            </div>
+            <div class="mp-foot"><span>共 6 条 · 有感悟 4 条</span><button class="link-btn clear">清空本书…</button></div>
+          </div>
+        </div>
+        <div class="sc-cap"><b>分组与更多菜单</b>：组头显示名称与组内计数；「⋯」菜单含跳转 / 编辑 / 复制 / 删除四项；纯高亮条目不显示感悟预览。</div>
+      </div>
+      <div class="state-card">
+        <div class="sc-stage">
+          <div class="export-modal" style="box-shadow:0 10px 30px rgba(15,23,42,.2)">
+            <h3>导出标记</h3>
+            <div class="ex-row">
+              <span class="rl">格式</span>
+              <button class="radio-pill active">Markdown（.md）</button>
+              <button class="radio-pill" style="opacity:.5;cursor:not-allowed">JSON</button>
+            </div>
+            <div class="ex-row">
+              <span class="rl">范围</span>
+              <button class="radio-pill active">当前图书</button>
+              <button class="radio-pill">全部图书</button>
+            </div>
+            <textarea class="ex-preview" readonly># 《溪畔笔记》标记记录
+
+## 第二章 溪声
+
+> 溪声把夜色洗得发白，月亮从山脊后面升起来，
+> 像一枚被河水磨圆的旧硬币。
+
+**感悟：** 开篇的比喻就把「旧」字立住了——整本书
+都在写旧物与旧人。
+
+*位置：第二章 溪声 · 5 小时前*</textarea>
+            <div class="ex-foot">
+              <button class="btn">取消</button>
+              <button class="btn">复制到剪贴板</button>
+              <button class="btn primary">下载 .md</button>
+            </div>
+          </div>
+        </div>
+        <div class="sc-cap"><b>导出弹层</b>：格式单选（本版仅 Markdown，见 D71）+ 范围单选（当前 / 全部）+ 预览 + 复制 / 下载。下载文件名为《书名》-标记.md。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ④ 设置项 ===== -->
+  <section class="demo-section">
+    <h2><span class="no">4</span>设置面板 · 「标记记录」分组</h2>
+    <p class="desc">设置面板新增「标记记录」分组：总开关（默认开）+ 默认高亮色。关闭后划词不弹工具条、Ctrl+M 无面板，正文已有高亮照常显示（关闭只影响新增，与「删除需显式操作」一致）。</p>
+    <div class="window settings-window">
+      <div class="titlebar">
+        <span class="app-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        </span>
+        <span class="title">BookEditor — 设置</span>
+        <span class="mockup-tag">MOCKUP</span>
+        <div class="window-controls">
+          <button><svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <button><svg width="11" height="11" viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button>
+          <button class="close"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="1.2"/></svg></button>
+        </div>
+      </div>
+      <div style="position:relative;height:420px;background:var(--stage-bg)">
+        <div class="set-panel">
+          <nav class="set-nav">
+            <button class="set-nav-item">常规</button>
+            <button class="set-nav-item">阅读体验</button>
+            <button class="set-nav-item">外观</button>
+            <button class="set-nav-item active">标记记录</button>
+            <button class="set-nav-item">高级</button>
+          </nav>
+          <div class="set-body">
+            <h3>标记记录</h3>
+            <div class="set-row">
+              <span class="lab">启用标记记录<span class="d">选中正文即可高亮并记录感悟（Ctrl+M 打开面板）</span></span>
+              <span class="ctl"><button class="switch on" id="swMark" aria-checked="true"></button></span>
+            </div>
+            <div class="set-row">
+              <span class="lab">默认高亮颜色<span class="d">新标记的初始颜色，可随时改色</span></span>
+              <span class="ctl">
+                <button class="dot dot-yellow" style="box-shadow:0 0 0 2px var(--accent)"></button>
+                <button class="dot dot-green"></button>
+                <button class="dot dot-blue"></button>
+                <button class="dot dot-pink"></button>
+              </span>
+            </div>
+            <div class="set-row">
+              <span class="lab">标记数据<span class="d">保存于本机浏览器存储（bookeditor.marks.v1），清空书架记录时联动清理</span></span>
+              <span class="ctl"><button class="btn" style="font-size:12px">前往书架管理</button></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="demo-footer">
+    <p>本页为 v0.3.0「标记记录」模块的可交互视觉基线，交互口径以《BookEditor v0.3.0 —— 标记记录模块 开发方案》§4 为准；实现细节（EPUB CFI 降级、PDF quote 重匹配、上限淘汰等）见该方案 §3 / §7。</p>
+    <p>示例图书《溪畔笔记》及其中文字均为本示例虚构，仅用于演示。示例数据保存在页面内存中，刷新后还原初始状态。</p>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ===== 演示数据 =====
+  var now = Math.floor(Date.now() / 1000);
+  var marks = [
+    { id: "m6", color: "blue", text: "", note: "读到这里忽然想起小时候外婆家的渡口。原来「等待」也可以是一种职业。", chapter: "想法", idea: true, time: now - 3600 * 5 },
+    { id: "m1", color: "yellow", text: "溪声把夜色洗得发白，月亮从山脊后面升起来，像一枚被河水磨圆的旧硬币。", note: "开篇的比喻就把「旧」字立住了——整本书都在写旧物与旧人。", chapter: "第二章 溪声", time: now - 3600 * 5 },
+    { id: "m2", color: "green", text: "所谓故乡，不过是有人替你记得你小时候的模样。", note: "", chapter: "第二章 溪声", time: now - 86400 },
+    { id: "m3", color: "blue", text: "他把最后一条船缆解开时，手抖得像风里的芦苇。", note: "父亲的形象从这里开始立起来，与前文「从不夸口」形成对位。", chapter: "第三章 旧缆", time: now - 86400 * 3 },
+    { id: "m4", color: "pink", text: "遗忘是一场缓慢的涨水，先没过脚踝，再没过胸口。", note: "比喻系统：水 / 涨水 / 没过——与第一章「溪声」意象呼应。", chapter: "第三章 旧缆", time: now - 86400 * 4 },
+    { id: "m5", color: "yellow", text: "我在渡口坐了很久，久到船家以为我也是摆渡人。", note: "", chapter: "第四章 渡口", time: now - 86400 * 6 }
+  ];
+  var GROUP_ORDER = ["想法", "第二章 溪声", "第三章 旧缆", "第四章 渡口"];
+  var COLOR_LINE = { yellow: "var(--hl-yellow-line)", green: "var(--hl-green-line)", blue: "var(--hl-blue-line)", pink: "var(--hl-pink-line)" };
+  var COLOR_BG = { yellow: "var(--hl-yellow)", green: "var(--hl-green)", blue: "var(--hl-blue)", pink: "var(--hl-pink)" };
+  var state = { filter: "all", query: "", panelOpen: true, sel: null, editing: null, noteColor: "yellow", exScope: "book", bubbleId: null };
+
+  function $(id) { return document.getElementById(id); }
+  function relTime(ts) {
+    var diff = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+    if (diff < 3600) return Math.max(1, Math.floor(diff / 60)) + " 分钟前";
+    if (diff < 86400) return Math.floor(diff / 3600) + " 小时前";
+    if (diff < 86400 * 7) return Math.floor(diff / 86400) + " 天前";
+    var d = new Date(ts * 1000);
+    return (d.getMonth() + 1) + " 月 " + d.getDate() + " 日";
+  }
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $("toast");
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.hidden = true; }, 1800);
+  }
+
+  // ===== 面板渲染 =====
+  function visibleMarks() {
+    var q = state.query.trim().toLowerCase();
+    return marks.filter(function (m) {
+      if (state.filter === "noted" && !m.note) return false;
+      if (["yellow", "green", "blue", "pink"].indexOf(state.filter) >= 0 && m.color !== state.filter) return false;
+      if (q && (m.text + " " + m.note).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
+  function renderList() {
+    var list = $("mpList");
+    list.innerHTML = "";
+    var vis = visibleMarks();
+    var groups = {};
+    vis.forEach(function (m) { (groups[m.chapter] = groups[m.chapter] || []).push(m); });
+    var keys = GROUP_ORDER.filter(function (k) { return groups[k]; });
+    Object.keys(groups).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+    if (vis.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "mp-empty";
+      empty.innerHTML = '<span class="ic"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></span>' +
+        (state.query || state.filter !== "all" ? "无匹配标记" : "还没有标记<br>选中正文即可添加标记与感悟");
+      list.appendChild(empty);
+    }
+    keys.forEach(function (g) {
+      var gh = document.createElement("div");
+      gh.className = "mp-group" + (g === "想法" ? " idea" : "");
+      gh.textContent = (g === "想法" ? "◆ " : "") + g + " " + groups[g].length;
+      list.appendChild(gh);
+      groups[g].forEach(function (m) {
+        var item = document.createElement("div");
+        item.className = "mark-item";
+        item.setAttribute("data-id", m.id);
+        var bar = document.createElement("span");
+        bar.className = "bar bar-" + m.color;
+        var body = document.createElement("div");
+        body.className = "body";
+        var text = document.createElement("div");
+        text.className = "mi-text" + (m.idea ? " idea" : "");
+        text.textContent = m.idea ? "◆ " + m.note : m.text;
+        body.appendChild(text);
+        if (m.note && !m.idea) {
+          var note = document.createElement("div");
+          note.className = "mi-note";
+          note.textContent = m.note;
+          body.appendChild(note);
+        }
+        var meta = document.createElement("div");
+        meta.className = "mi-meta";
+        meta.innerHTML = "<span>" + relTime(m.time) + "</span>" + (m.idea ? "" : "<span>·</span><span>" + m.chapter + "</span>");
+        body.appendChild(meta);
+        var more = document.createElement("button");
+        more.className = "mi-more";
+        more.textContent = "⋯";
+        more.setAttribute("data-more", m.id);
+        item.appendChild(bar); item.appendChild(body); item.appendChild(more);
+        list.appendChild(item);
+      });
+    });
+    // 头部计数 / 徽标 / 底部
+    var noted = marks.filter(function (m) { return m.note; }).length;
+    $("mpCount").textContent = marks.length + " 条";
+    $("marksBadge").textContent = marks.length;
+    $("mpFootText").textContent = "共 " + marks.length + " 条 · 有感悟 " + noted + " 条";
+    // chips 计数
+    var chipCounts = { all: marks.length, noted: noted, yellow: 0, green: 0, blue: 0, pink: 0 };
+    marks.forEach(function (m) { chipCounts[m.color]++; });
+    Array.prototype.forEach.call(document.querySelectorAll("#mpChips .chip"), function (c) {
+      var f = c.getAttribute("data-filter");
+      var cnt = c.querySelector(".cnt");
+      if (cnt) cnt.textContent = chipCounts[f];
+      c.classList.toggle("active", state.filter === f);
+    });
+  }
+
+  // ===== 面板开关 =====
+  function setPanel(open) {
+    state.panelOpen = open;
+    $("marksPanel").hidden = !open;
+    $("btnMarks").classList.toggle("on", open);
+    if (!open) { hideToolbar(); hideBubble(); }
+  }
+  $("btnMarks").addEventListener("click", function () { setPanel(!state.panelOpen); });
+  $("mpClose").addEventListener("click", function () { setPanel(false); });
+
+  document.addEventListener("keydown", function (ev) {
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && !ev.shiftKey && (ev.key === "m" || ev.key === "M")) {
+      ev.preventDefault();
+      setPanel(!state.panelOpen);
+    }
+    if (ev.key === "Escape") {
+      if (!$("noteModal").hidden) { $("noteModal").hidden = true; return; }
+      if (!$("exportModal").hidden) { $("exportModal").hidden = true; return; }
+      if (!$("clearModal").hidden) { $("clearModal").hidden = true; return; }
+      hideToolbar(); hideBubble();
+    }
+  });
+
+  // ===== 工具条（模拟划词） =====
+  function showToolbarNear(el) {
+    var stage = $("readerStage").getBoundingClientRect();
+    var r = el.getBoundingClientRect();
+    var tb = $("markToolbar");
+    tb.hidden = false;
+    var left = r.left - stage.left + r.width / 2 - tb.offsetWidth / 2;
+    left = Math.max(10, Math.min(stage.width - tb.offsetWidth - 10, left));
+    var top = r.top - stage.top - tb.offsetHeight - 8;
+    if (top < 6) top = r.bottom - stage.top + 8;
+    tb.style.left = left + "px";
+    tb.style.top = top + "px";
+  }
+  function hideToolbar() { $("markToolbar").hidden = true; state.sel = null; }
+  $("dcSelect").addEventListener("click", function () {
+    setPanel(true);
+    state.sel = { text: $("simSel").textContent, el: $("simSel") };
+    showToolbarNear($("simSel"));
+    toast("已选中「数到第十七颗时忘了数到过几。」");
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll("#markToolbar .dot"), function (d) {
+    d.addEventListener("click", function () {
+      if (!state.sel) return;
+      var color = d.getAttribute("data-color");
+      var id = "m" + (Date.now() % 100000);
+      marks.unshift({ id: id, color: color, text: state.sel.text, note: "", chapter: "第二章 溪声", time: Math.floor(Date.now() / 1000) });
+      renderList();
+      hideToolbar();
+      toast("已标记（" + ({ yellow: "黄", green: "绿", blue: "蓝", pink: "粉" })[color] + "）");
+    });
+  });
+  $("ttCopy").addEventListener("click", function () {
+    if (state.sel && navigator.clipboard) navigator.clipboard.writeText(state.sel.text).catch(function () {});
+    hideToolbar();
+    toast("已复制选中原文");
+  });
+  $("ttNote").addEventListener("click", function () {
+    if (!state.sel) return;
+    openNoteEditor({ text: state.sel.text, color: "yellow", note: "", isNew: true });
+  });
+
+  // ===== 高亮气泡 =====
+  function hideBubble() { $("markBubble").hidden = true; state.bubbleId = null; }
+  Array.prototype.forEach.call(document.querySelectorAll(".mark-hl"), function (hl) {
+    hl.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      var m = marks.find(function (x) { return x.id === hl.getAttribute("data-mark-id"); });
+      if (!m) return;
+      state.bubbleId = m.id;
+      $("bubbleQuote").textContent = m.text;
+      $("bubbleNote").hidden = !m.note;
+      $("bubbleNote").textContent = m.note;
+      var b = $("markBubble");
+      b.hidden = false;
+      var stage = $("readerStage").getBoundingClientRect();
+      var r = hl.getBoundingClientRect();
+      var left = r.left - stage.left + r.width / 2 - 130;
+      left = Math.max(10, Math.min(stage.width - 270, left));
+      b.style.left = left + "px";
+      b.style.top = (r.bottom - stage.top + 10) + "px";
+      hideToolbar();
+    });
+  });
+  $("bubbleEdit").addEventListener("click", function () {
+    var m = marks.find(function (x) { return x.id === state.bubbleId; });
+    if (m) openNoteEditor(m);
+  });
+  $("bubbleDel").addEventListener("click", function () {
+    marks = marks.filter(function (x) { return x.id !== state.bubbleId; });
+    hideBubble(); renderList(); toast("已删除标记");
+  });
+  $("readerStage").addEventListener("click", function () { hideBubble(); });
+
+  // ===== 感悟编辑器 =====
+  function openNoteEditor(opts) {
+    state.editing = opts.id || null;
+    state.noteColor = opts.color || "yellow";
+    $("neBar").style.background = COLOR_LINE[state.noteColor];
+    $("neQuote").textContent = opts.idea ? "当前位置 · 第二章 溪声（独立想法，不依赖选区）" : opts.text;
+    $("neText").value = opts.note || "";
+    Array.prototype.forEach.call(document.querySelectorAll("#noteModal .dot"), function (d) {
+      d.style.boxShadow = d.getAttribute("data-color") === state.noteColor ? "0 0 0 2px var(--accent)" : "0 0 0 1px var(--border)";
+    });
+    $("noteModal").hidden = false;
+    setTimeout(function () { $("neText").focus(); }, 30);
+    hideToolbar();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("#noteModal .dot"), function (d) {
+    d.addEventListener("click", function () {
+      state.noteColor = d.getAttribute("data-color");
+      $("neBar").style.background = COLOR_LINE[state.noteColor];
+      Array.prototype.forEach.call(document.querySelectorAll("#noteModal .dot"), function (x) {
+        x.style.boxShadow = x.getAttribute("data-color") === state.noteColor ? "0 0 0 2px var(--accent)" : "0 0 0 1px var(--border)";
+      });
+    });
+  });
+  $("neCancel").addEventListener("click", function () { $("noteModal").hidden = true; });
+  $("neSave").addEventListener("click", function () {
+    var note = $("neText").value.trim();
+    if (state.editing) {
+      var m = marks.find(function (x) { return x.id === state.editing; });
+      if (m) { m.note = note; m.color = state.noteColor; m.time = Math.floor(Date.now() / 1000); }
+      toast("感悟已保存");
+    } else if (state.sel) {
+      marks.unshift({ id: "m" + (Date.now() % 100000), color: state.noteColor, text: state.sel.text, note: note, chapter: "第二章 溪声", time: Math.floor(Date.now() / 1000) });
+      toast(note ? "已标记并保存感悟" : "已标记（纯高亮）");
+    }
+    $("noteModal").hidden = true;
+    renderList();
+  });
+  $("neText").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); $("neSave").click(); }
+  });
+
+  // ===== 写想法 =====
+  function openIdea() {
+    setPanel(true);
+    openNoteEditor({ idea: true, color: "blue", note: "", text: "" });
+  }
+  $("mpIdea").addEventListener("click", openIdea);
+  $("dcIdea").addEventListener("click", openIdea);
+
+  // ===== 列表交互 =====
+  $("mpSearch").addEventListener("input", function () { state.query = this.value; renderList(); });
+  Array.prototype.forEach.call(document.querySelectorAll("#mpChips .chip"), function (c) {
+    c.addEventListener("click", function () { state.filter = c.getAttribute("data-filter"); renderList(); });
+  });
+  $("mpList").addEventListener("click", function (ev) {
+    var moreBtn = ev.target.closest("[data-more]");
+    if (moreBtn) {
+      ev.stopPropagation();
+      var item = moreBtn.closest(".mark-item");
+      var old = item.querySelector(".cat-menu");
+      if (old) { old.remove(); return; }
+      Array.prototype.forEach.call(document.querySelectorAll(".cat-menu"), function (x) { x.remove(); });
+      var menu = document.createElement("div");
+      menu.className = "cat-menu";
+      menu.innerHTML = '<button class="menu-item" data-act="jump">跳转到原文</button>' +
+        '<button class="menu-item" data-act="edit">编辑</button>' +
+        '<button class="menu-item" data-act="copy">复制原文</button>' +
+        '<button class="menu-item danger" data-act="del">删除</button>';
+      item.appendChild(menu);
+      menu.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var act = e.target.getAttribute("data-act");
+        var id = item.getAttribute("data-id");
+        var m = marks.find(function (x) { return x.id === id; });
+        menu.remove();
+        if (!m) return;
+        if (act === "jump") jumpTo(m);
+        else if (act === "edit") openNoteEditor(m);
+        else if (act === "copy") { if (navigator.clipboard) navigator.clipboard.writeText(m.idea ? m.note : m.text).catch(function () {}); toast("已复制"); }
+        else if (act === "del") { marks = marks.filter(function (x) { return x.id !== id; }); renderList(); toast("已删除标记"); }
+      });
+      return;
+    }
+    var item = ev.target.closest(".mark-item");
+    if (item) {
+      var m = marks.find(function (x) { return x.id === item.getAttribute("data-id"); });
+      if (m) jumpTo(m);
+    }
+  });
+  document.addEventListener("click", function () {
+    Array.prototype.forEach.call(document.querySelectorAll(".cat-menu"), function (x) { x.remove(); });
+  });
+
+  function jumpTo(m) {
+    Array.prototype.forEach.call(document.querySelectorAll(".mark-flash"), function (x) { x.classList.remove("mark-flash"); });
+    var span = document.querySelector('.mark-hl[data-mark-id="' + m.id + '"]');
+    if (span) {
+      span.classList.remove("mark-flash");
+      void span.offsetWidth;
+      span.classList.add("mark-flash");
+      span.scrollIntoView({ block: "center", behavior: "smooth" });
+      toast("已跳转到「" + m.chapter + "」并高亮闪烁");
+    } else {
+      toast("已跳转到「" + m.chapter + "」（示例仅展示第二章正文）");
+    }
+  }
+
+  // ===== 导出 =====
+  function buildMarkdown() {
+    var scope = state.exScope;
+    var list = marks.slice().sort(function (a, b) { return GROUP_ORDER.indexOf(a.chapter) - GROUP_ORDER.indexOf(b.chapter) || b.time - a.time; });
+    var lines = ["# 《溪畔笔记》标记记录", ""];
+    var lastGroup = null;
+    list.forEach(function (m) {
+      if (m.chapter !== lastGroup) {
+        lines.push("## " + m.chapter, "");
+        lastGroup = m.chapter;
+      }
+      if (m.idea) {
+        lines.push("◆ **想法**（" + relTime(m.time) + "）", "", m.note, "");
+      } else {
+        lines.push("> " + m.text.replace(/\n/g, "\n> "), "");
+        if (m.note) lines.push("**感悟：** " + m.note, "");
+        lines.push("*位置：" + m.chapter + " · " + relTime(m.time) + "*", "");
+      }
+    });
+    return lines.join("\n");
+  }
+  function openExport() {
+    setPanel(true);
+    $("exPreview").value = buildMarkdown();
+    $("exportModal").hidden = false;
+  }
+  $("mpExport").addEventListener("click", openExport);
+  $("dcExport").addEventListener("click", openExport);
+  $("exCancel").addEventListener("click", function () { $("exportModal").hidden = true; });
+  $("exScopeBook").addEventListener("click", function () { state.exScope = "book"; $("exScopeBook").classList.add("active"); $("exScopeAll").classList.remove("active"); $("exPreview").value = buildMarkdown(); });
+  $("exScopeAll").addEventListener("click", function () { state.exScope = "all"; $("exScopeAll").classList.add("active"); $("exScopeBook").classList.remove("active"); $("exPreview").value = buildMarkdown(); });
+  $("exCopy").addEventListener("click", function () {
+    if (navigator.clipboard) navigator.clipboard.writeText($("exPreview").value).catch(function () {});
+    toast("已复制 " + marks.length + " 条标记");
+  });
+  $("exDownload").addEventListener("click", function () {
+    var blob = new Blob([$("exPreview").value], { type: "text/markdown;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "溪畔笔记-标记.md";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    toast("已开始下载《溪畔笔记》-标记.md");
+  });
+
+  // ===== 清空二次确认 =====
+  $("mpClear").addEventListener("click", function () { $("clearCount").textContent = marks.length; $("clearModal").hidden = false; });
+  $("dcClear").addEventListener("click", function () { setPanel(true); $("clearCount").textContent = marks.length; $("clearModal").hidden = false; });
+  $("clearCancel").addEventListener("click", function () { $("clearModal").hidden = true; });
+  $("clearOk").addEventListener("click", function () {
+    marks = marks.filter(function (m) { return false; });
+    $("clearModal").hidden = true;
+    renderList();
+    toast("已清空本书标记（书架记录不受影响）");
+  });
+
+  // ===== 设置开关 mockup =====
+  $("swMark").addEventListener("click", function () {
+    var on = this.classList.toggle("on");
+    this.setAttribute("aria-checked", on ? "true" : "false");
+    toast(on ? "标记记录已开启（演示）" : "标记记录已关闭（演示）：划词不再弹工具条");
+  });
+
+  renderList();
+})();
+</script>
+</body>
+</html>
