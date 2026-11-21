@@ -116,7 +116,7 @@ markDefaultColor: MarkColor;
 2. 工具条浮于选区上方（空间不足时翻到下方）：4 个色点 + 「写感悟」+ 「复制」。色点 hover 显示色名（黄/绿/蓝/粉）。
 3. 点色点 → 即时落库 + 高亮上色 + toast「已标记」；工具条收回。
 4. 在已有高亮上再次选词（选区与已标记区间重叠）→ 工具条变为「改色 / 写感悟 / 删除标记」三态，删除需该条目的更多菜单确认（工具条内删除直接生效并 toast「已删除标记」，不二次确认——与单本 ✕ 同口径）。
-5. 点击正文中的高亮 → 弹出该条气泡：原文 1 行 + 感悟预览（≤ 2 行）+「编辑」「删除」。**D97 增补**：鼠标悬停高亮（有感悟的条目）稳定 320ms 即浮出只读感悟提示，移开收起；点击仍是完整气泡。
+5. **（D98 修订）**鼠标悬停正文高亮（有原文的标记）稳定约 220ms 即浮出**标记内容**（原文 + 感悟），**鼠标离开立即消失**；提示 `pointer-events:none`、跟随光标，不可交互。**右键高亮 → 上下文菜单「编辑标记 / 删除标记」**。左键单击高亮不再弹气泡（原 §4.5 气泡方案已废止）。
 6. 「复制」复制划选原文到剪贴板（复用现有 Ctrl+C 文案链路）。
 
 **写感悟编辑器（MarkNoteEditor）**
@@ -234,7 +234,8 @@ markDefaultColor: MarkColor;
 | D94/D95 | 面板被合成层遮挡（D92/D93 假设） | **定案：布局挤出**。日志 `MARK_PANEL_RECT x=1266 y=55 w=340 h=708 hit=none`，视口宽 1266 → 面板恰在右边界外；根因 `.content` flex item 默认 `min-width:auto` 被超宽 iframe 撑满。用户决策改**弹窗浮层**：`.app-body{position:relative}`、`.marks-panel{position:absolute;right/top/bottom:0}`、新增 `.marks-backdrop` 遮罩、保留 `.content{min-width:0}` 保险 | D92 z-index / D93 合成层两次层叠尝试均无效；**教训：渲染了但看不见，先量几何位置再判断是否层叠**。副作用消除：开关面板不再改正文宽度、不再触发 ResizeObserver/resize |
 | D95 状态 | 面板弹窗化后的真机视觉 | 已构建、提交、交付 `build/bin/book-editor-D95.exe`；**用户尚未确认最终视觉与关闭交互** | 如实记录待确认；D89 划词问题仍未验证 |
 | D96 | §4.14 分组口径「按章节分组、组内时间倒序」，分组顺序为首次出现顺序 | **按目录树组织**：`EpubViewer` 经 `tocNodesWithPath()` 回传 `{href,label,depth,order,labels}` 树路径（走 `onTocContext` → App `tocCtx` → 面板）；`marks.ts` 新增 `markChapterPaths()`（按 `locator.chapter` **精确匹配**目录标签反查路径，不模糊猜）与 `sortChapterGroups()`（按 order 字典序，父章→子节；无路径分组殿后）；面板分组加 `.mp-depth-0/1/2` 缩进、父章面包屑 `.gpath`、当前章 `.gcur` 标识 | 用户反馈「标记可以按章节显示吗」——原实现虽按 `locator.chapter` 分组，但**顺序是首次出现**、无层级、看不出归属（截图里两个分组平铺同字号）。标签不匹配时宁可不归类（错归档比不归类更误导）；切书/换格式时 App 清空 `tocCtx` 防串书 |
-| D97 | §4.5 仅「点击高亮 → 气泡」 | **新增悬停只读提示** `.mark-hovertip`：`bindStageMarks` 增 `mousemove`/`mouseleave` 命中，稳定停留 `HOVER_DELAY_MS=320ms` 才浮出；只对**有感悟**的条目标示（纯高亮无信息可显示）；鼠标移入提示矩形内时保持（`.mark-hovertip` 命中豁免，否则提示会在光标接近瞬间消失、永远点不进）；点击仍走完整气泡（`showBubble` 先 `cancelHover`）；新增 `HOVER_TIP` 打点 | 用户反馈「鼠标悬停标记点可以显示感悟吗」。分页模式 `markClicked` 不变；悬停提示 z-index 1001 低于气泡 1003，两者不叠 |
+| D97 | §4.5 仅「点击高亮 → 气泡」 | **悬停提示** `.mark-hovertip`：`bindStageMarks` 增 `mousemove`/`mouseleave` 命中，稳定停留后浮出；新增 `HOVER_TIP` 打点 | 用户首轮要求「悬停显示感悟」；后经 D98 修订为显示全部标记内容 |
+| D98 | D97 口径：悬停只显示**感悟**、点击仍弹气泡（可编辑/删除） | **按用户最终要求重定**：① 悬停显示**标记内容**（原文 + 感悟，不只是感悟），悬浮即显、鼠标离开立即消失；② 提示 `position:fixed` + 视口坐标跟随光标、`pointer-events:none` 完全穿透（「移开即消失」才成立，不再需要「移入提示保持」豁免）；③ **右键高亮 → 「编辑标记 / 删除标记」菜单**（`.mark-menu`，fixed 定位，靠近边界夹紧；点别处/Esc/滚动/缩放关闭）；④ **左键点击高亮的 `mark-bubble` 气泡整体移除**（EPUB 与 TXT 两处），`showBubble`/`bubble` state 一并删除 | 用户明确要求「悬停显示内容 鼠标离开消失，右键可以编辑删除，悬停只显示标记内容」——原「点击弹气泡」不符合直觉。三个实现要点：① epubjs `DOM_EVENTS` 常量**不含 contextmenu**（只有 keydown/keyup/mouseup/mousedown/mousemove/click/touch*），翻页模式 iframe 内右键既冒泡不出也代理不到 → 直接在 iframe document 上装 `contextmenu`，并在 `rendered`/`relocated` 时对新文档补装；② TXT 侧同口径（`mousemove` 命中 `mark[data-mark-id]`、`contextmenu` 弹菜单）；③ 悬停判定条件由「有感悟(note)」改为「有原文(text)」，独立想法无原文不参与悬停 |
 
 **风险**
 - EPUB iframe 内选词的坐标换算已有先例（`bindStageInteraction` 的 `iframeContentPoint`），工具条定位复用该函数，不新造轮子。

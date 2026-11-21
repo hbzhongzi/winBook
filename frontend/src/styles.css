@@ -1598,39 +1598,86 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
 }
 .mark-bubble .mb-acts { display: flex; gap: 6px; justify-content: flex-end; }
 
-/* ===== D97：高亮悬停提示（只读感悟摘要） ===== */
-/* 层级低于气泡 1003：点击后气泡盖住提示，两者不叠 */
+/* ===== D97/D98：高亮悬停提示（只显示标记内容，不可交互） ===== */
+/* fixed + 视口坐标：跟随光标；pointer-events:none 让鼠标完全穿透，
+   「鼠标离开即消失」才能成立（提示不抢悬停/点击） */
 .mark-hovertip {
-  position: absolute;
+  position: fixed;
   z-index: 1001;
-  width: 292px;
+  left: 0;
+  top: 0;
+  max-width: 300px;
   padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid var(--border-soft);
   background: var(--surface-bg);
   box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
-  pointer-events: auto;
-  animation: markHoverIn .12s ease both;
+  pointer-events: none;
+  /* 光标右上偏移，避免遮住被指的文字 */
+  transform: translate(14px, 14px);
+  animation: markHoverIn .1s ease both;
 }
-.mh-note {
+.mh-quote {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mark-hovertip .mh-note {
   font-size: 12px;
   line-height: 1.6;
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 160px;
+  max-height: 150px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 6;
   line-clamp: 6;
   -webkit-box-orient: vertical;
 }
-.mh-foot { margin-top: 6px; display: flex; justify-content: flex-end; }
-.mh-hint { font-size: 10px; color: var(--text-3); }
-@keyframes markHoverIn {
-  from { opacity: 0; transform: translateY(-3px); }
-  to { opacity: 1; transform: translateY(0); }
+.mh-quote + .mh-note {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-soft);
 }
+@keyframes markHoverIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ===== D98：高亮右键菜单（编辑/删除） ===== */
+.mark-menu {
+  position: fixed;
+  z-index: 1005;
+  min-width: 156px;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+  display: flex;
+  flex-direction: column;
+  animation: markHoverIn .1s ease both;
+}
+.mark-menu .menu-item {
+  text-align: left;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+.mark-menu .menu-item:hover { background: var(--bar-bg); }
+.mark-menu .menu-item.danger { color: var(--danger, #d64545); }
+.mark-menu .menu-item.danger:hover { background: var(--bar-bg); }
 
 /* ===== 工具栏「标记」入口（含徽标） ===== */
 .mark-entry {

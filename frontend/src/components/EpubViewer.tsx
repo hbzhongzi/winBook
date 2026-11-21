@@ -179,8 +179,8 @@ const OPEN_TIMEOUT_MS = 10000;
 const SETTLE_MS = 700;
 // 首章渲染为空白的自动后移次数（商业书常见：首章为图片页/空壳页）
 const EMPTY_SECTION_RETRY = 1;
-/** D97：高亮悬停多久浮出感悟提示（毫秒）；过短会在划选/滚动时误弹 */
-const HOVER_DELAY_MS = 320;
+/** D97/D98：高亮悬停多久浮出标记内容（毫秒）；过短会在划选/滚动时误弹 */
+const HOVER_DELAY_MS = 220;
 
 /**
  * v0.3.0 标记：annotations.add 的 type（与 remove 成对；epub.js 7943 行
@@ -579,7 +579,7 @@ function bindStageInteraction(stage: HTMLElement, onLink: (href: string) => void
  * 滚动模式划词桥接（v0.3.0）：iframe pointer-events:none 下原生拖拽选区不可用
  * （事件根本进不了 iframe），在 stage 上记录 mousedown/mouseup 两端点，
  * 用 iframe 文档自身的 caretRangeFromPoint 重建 Range、回填选区（原生选中视觉），
- * 再统一交 onDragSelect。单击（位移 < MARK_DRAG_MIN）时对高亮 <g> 命中测试 → onMarkHit。
+ * 再统一交 onDragSelect。右键（contextmenu）命中高亮 <g> → onMarkMenu（编辑/删除）。
  *
  * 不监听 iframe 内 selectionchange：那是 page 模式的通道（rendition "selected"），
  * 滚动模式若双通道会有 250ms 防抖造成的双弹工具条。
@@ -588,29 +588,31 @@ function bindStageMarks(
   stage: HTMLElement,
   handlers: {
     onDragSelect: (doc: Document, range: Range) => void;
-    onMarkHit: (id: string) => void;
+    /** D98：右键高亮 → 上下文菜单（编辑/删除） */
+    onMarkMenu: (id: string, clientX: number, clientY: number) => void;
     onPress: () => void;
-    /** D97：悬停命中的标记 id（null = 未命中），用于浮出感悟提示 */
+    /** D97：悬停命中的标记 id（null = 未命中），用于浮出标记内容 */
     onHover: (id: string | null, clientX: number, clientY: number) => void;
   }
 ): () => void {
   let down: { x: number; y: number } | null = null;
   const cleanups: (() => void)[] = [];
 
+  /** 命中提示浮层自身（提示跟随光标，需豁免，避免抖动/自激） */
+  const overTip = (ev: MouseEvent): boolean => {
+    const tipEl = stage.querySelector<HTMLElement>(".mark-hovertip");
+    if (!tipEl) return false;
+    const tr = tipEl.getBoundingClientRect();
+    return (
+      ev.clientX >= tr.left && ev.clientX <= tr.right &&
+      ev.clientY >= tr.top && ev.clientY <= tr.bottom
+    );
+  };
+
   const onMove = (ev: MouseEvent) => {
     // 拖拽选词过程中不弹悬停提示（会把工具条位置挤乱）
     if (down) return;
-    // 提示显示在光标下方，鼠标移入提示时必然先经过「未命中高亮」的空白区域。
-    // 若此时直接 cancel，提示会在鼠标接近的瞬间消失（永远点不进去）。
-    // 因此：已有提示时，鼠标落在提示矩形内 → 保持；否则交给 scheduleHover 判定。
-    const tipEl = stage.querySelector<HTMLElement>(".mark-hovertip");
-    if (tipEl) {
-      const tr = tipEl.getBoundingClientRect();
-      const inTip =
-        ev.clientX >= tr.left && ev.clientX <= tr.right &&
-        ev.clientY >= tr.top && ev.clientY <= tr.bottom;
-      if (inTip) return;
-    }
+    if (overTip(ev)) return; // D98：提示跟随光标，落在提示上时保持不动
     const g = findMarkElAt(stage, ev.clientX, ev.clientY);
     handlers.onHover(g?.getAttribute("data-id") ?? null, ev.clientX, ev.clientY);
   };
@@ -619,12 +621,12 @@ function bindStageMarks(
   const onLeave = () => handlers.onHover(null, 0, 0);
 
   const onDown = (ev: MouseEvent) => {
-    handlers.onPress(); // 新一次按下：消散上一轮工具条/气泡
+    handlers.onPress(); // 新一次按下：消散上一轮工具条/气泡/菜单
     handlers.onHover(null, ev.clientX, ev.clientY); // D97：按下即收起悬停提示
     down = null;
     if (ev.button !== 0) return;
     const t = ev.target as HTMLElement | null;
-    if (t?.closest?.(".mark-toolbar, .mark-bubble")) return; // 工具条/气泡自身不参与
+    if (t?.closest?.(".mark-toolbar, .mark-bubble, .mark-menu")) return;
     const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
     if (!iframe) return;
     const p = iframeContentPoint(iframe, ev);
@@ -632,12 +634,24 @@ function bindStageMarks(
     down = { x: p.x, y: p.y };
   };
 
+  // D98：右键高亮 → 编辑/删除菜单；未命中高亮时不拦截（保留原生菜单）
+  const onContextMenu = (ev: MouseEvent) => {
+    const t = ev.target as HTMLElement | null;
+    if (t?.closest?.(".mark-toolbar, .mark-bubble, .mark-menu")) return;
+    const g = findMarkElAt(stage, ev.clientX, ev.clientY);
+    const id = g?.getAttribute("data-id");
+    if (!id) return;
+    ev.preventDefault();
+    handlers.onHover(null, 0, 0);
+    handlers.onMarkMenu(id, ev.clientX, ev.clientY);
+  };
+
   const onUp = (ev: MouseEvent) => {
     const start = down;
     down = null;
     if (!start || ev.button !== 0) return;
     const t = ev.target as HTMLElement | null;
-    if (t?.closest?.(".mark-toolbar, .mark-bubble")) return;
+    if (t?.closest?.(".mark-toolbar, .mark-bubble, .mark-menu")) return;
     const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
     if (!iframe) return;
     let doc: Document | null = null;
@@ -667,20 +681,19 @@ function bindStageMarks(
       handlers.onDragSelect(doc, range);
       return;
     }
-    // 单击：高亮命中 → 气泡（§4.5）
-    const g = findMarkElAt(stage, ev.clientX, ev.clientY);
-    const id = g?.getAttribute("data-id");
-    if (id) handlers.onMarkHit(id);
+    // D98：单击高亮不再弹气泡——悬停看内容、右键改删（用户明确要求）
   };
 
   stage.addEventListener("mousedown", onDown);
   stage.addEventListener("mouseup", onUp);
   stage.addEventListener("mousemove", onMove);
   stage.addEventListener("mouseleave", onLeave);
+  stage.addEventListener("contextmenu", onContextMenu);
   cleanups.push(() => stage.removeEventListener("mousedown", onDown));
   cleanups.push(() => stage.removeEventListener("mouseup", onUp));
   cleanups.push(() => stage.removeEventListener("mousemove", onMove));
   cleanups.push(() => stage.removeEventListener("mouseleave", onLeave));
+  cleanups.push(() => stage.removeEventListener("contextmenu", onContextMenu));
   return () => cleanups.forEach((fn) => fn());
 }
 
@@ -892,11 +905,37 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   // 若此时 resize 会 clear 掉刚加载的正文并自愈回首章（表现为「跳章跳回第一章且空白」）。
   const jumpResizeGuardRef = useRef(0);
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null);
-  const [bubble, setBubble] = useState<{ mark: Mark; x: number; y: number } | null>(null);
-  // D97：悬停提示——高亮上停留即浮出感悟摘要（只读），点开仍是完整气泡（可编辑/删除）
+  // D97：悬停提示——高亮上停留即浮出标记内容（只读），移开即消失
   const [hoverTip, setHoverTip] = useState<{ mark: Mark; x: number; y: number } | null>(null);
   const hoverTimerRef = useRef<number | null>(null);
   const hoverIdRef = useRef<string | null>(null);
+  // D98：右键菜单（编辑/删除）——取代原「左键点击高亮弹气泡」
+  const [ctxMenu, setCtxMenu] = useState<{ mark: Mark; x: number; y: number } | null>(null);
+
+  // D98：右键菜单关闭时机——点别处 / Esc / 滚动（菜单用 fixed 坐标，滚动后会脱位）
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onDown = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest?.(".mark-menu")) return;
+      close();
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    // 捕获阶段监听：epub-content/iframe 内部滚动也能收到
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [ctxMenu]);
   const jumpNonceRef = useRef(-1);
 
   /** 清掉 iframe 内的程序化选区（宿主文档无选区可清；标记落库后调用） */
@@ -966,7 +1005,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     const hostRect = host?.getBoundingClientRect();
     const iframe = iframeOfDoc(containerRef.current, doc);
     const iframeRect = iframe?.getBoundingClientRect();
-    setBubble(null);
+    // D98：气泡已移除（悬停看内容、右键改删）
     if (!hostRect || !iframeRect) {
       setToolbar(null);
       return;
@@ -987,7 +1026,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     });
   };
 
-  // ===== D97：悬停显示感悟 =====
+  // ===== D97：悬停显示标记内容 =====
   /** 取消待触发的悬停计时与已显示的提示 */
   const cancelHover = () => {
     if (hoverTimerRef.current !== null) {
@@ -998,57 +1037,47 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     setHoverTip(null);
   };
 
-  /** 高亮点击 → 气泡（§4.5）：scroll 由 stage 命中测试调入；page 由 markClicked 调入 */
-  const showBubble = (m: Mark) => {
-    // D97：点击时收起悬停提示，避免两层浮层叠在一起
-    cancelHover();
-    const host = sectionRef.current;
-    const hostRect = host?.getBoundingClientRect();
-    const g = findMarkElById(containerRef.current, m.id);
-    if (!hostRect || !g) return;
-    const r = g.getBoundingClientRect();
-    if (r.width <= 0 && r.height <= 0) return;
-    setToolbar(null);
-    epubDiag("BUBBLE_SHOW", `id=${m.id}`);
-    setBubble({
-      mark: m,
-      x: Math.min(Math.max(r.left - hostRect.left, 8), Math.max(8, hostRect.width - 268)),
-      y: r.bottom - hostRect.top + 6,
-    });
+  /** D98：右键高亮 → 上下文菜单（用视口坐标，fixed 定位，靠近右/下边界时夹紧） */
+  const openMarkMenu = (id: string, clientX: number, clientY: number) => {
+    const m = marksCtxRef.current?.marks.find((x) => x.id === id);
+    if (!m) return;
+    const x = Math.min(Math.max(4, clientX), Math.max(4, window.innerWidth - 168));
+    const y = Math.min(Math.max(4, clientY), Math.max(4, window.innerHeight - 96));
+    epubDiag("MARK_MENU", `id=${id}`);
+    setCtxMenu({ mark: m, x, y });
   };
 
   /**
-   * 悬停计时：命中高亮且稳定停留 HOVER_DELAY_MS 才浮出，避免移动鼠标时满屏闪烁。
-   * 只显示「有感悟」的标记——纯高亮悬停无信息可显示，反而遮挡正文。
+   * 悬停提示（D97/D98）：命中高亮即浮出「标记内容」，鼠标离开立即消失。
+   *
+   * 内容 = 划选原文 + 感悟。只对划词标记（text 非空）显示；独立想法无原文可挂，
+   * 不参与悬停。提示浮层 `pointer-events: none`——用户要求「悬停显示内容、
+   * 鼠标离开消失」，提示不可交互，故不需要「鼠标移入提示保持」那套豁免逻辑。
+   * 编辑/删除走右键菜单（§4.5 修订）。
    */
   const scheduleHover = (id: string | null, clientX: number, clientY: number) => {
     if (!id) {
-      // 移到别处：清掉上一个，等待新的
       if (hoverIdRef.current !== null || hoverTip) cancelHover();
       return;
     }
-    if (hoverIdRef.current === id) return; // 同一高亮的提示已在显示：保持
-    // 注意：这里不提前写 hoverIdRef——只有真的弹出提示才记 id。
-    // 否则「无感悟的高亮」会把 id 占住，之后再悬停同一处不会再尝试。
+    if (hoverIdRef.current === id) {
+      // 同一高亮内移动：提示跟随光标（否则高亮很长时提示会停在首次出现的位置）
+      setHoverTip((prev) => (prev ? { ...prev, x: clientX, y: clientY } : prev));
+      return;
+    }
+    // 不提前写 hoverIdRef：只有真的弹出提示才记 id，
+    // 否则「独立想法/无原文」的高亮会把 id 占住，之后再悬停同一处不再尝试。
     cancelHover();
+    const m0 = marksCtxRef.current?.marks.find((x) => x.id === id);
+    if (!m0 || !m0.text) return;
+    // 提示是只读浮层，直接跟随光标右上偏移；HOVER_DELAY 仅用于抑制划选后的误弹
     hoverTimerRef.current = window.setTimeout(() => {
       hoverTimerRef.current = null;
       const m = marksCtxRef.current?.marks.find((x) => x.id === id);
-      if (!m || !m.note) return;
-      const host = sectionRef.current;
-      const hostRect = host?.getBoundingClientRect();
-      if (!hostRect) return;
-      const g = findMarkElById(containerRef.current, id);
-      const r = g?.getBoundingClientRect();
-      const anchorX = r && r.width > 0 ? r.left : clientX;
-      const anchorY = r && r.height > 0 ? r.bottom : clientY;
+      if (!m || !m.text) return;
       hoverIdRef.current = id;
       epubDiag("HOVER_TIP", `id=${id}`);
-      setHoverTip({
-        mark: m,
-        x: Math.min(Math.max(anchorX - hostRect.left, 8), Math.max(8, hostRect.width - 300)),
-        y: anchorY - hostRect.top + 8,
-      });
+      setHoverTip({ mark: m, x: clientX, y: clientY });
     }, HOVER_DELAY_MS);
   };
 
@@ -1301,7 +1330,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             inner.addEventListener("mousedown", () => {
               epubDiag("MARK_DISMISS", "iframe mousedown");
               setToolbar(null);
-              setBubble(null);
+              // D98：气泡已移除（悬停看内容、右键改删）
             });
           }
         });
@@ -1460,7 +1489,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             const offMarks = bindStageMarks(stage, {
               onPress: () => {
                 setToolbar(null);
-                setBubble(null);
+                // D98：气泡已移除（悬停看内容、右键改删）
               },
               onHover: scheduleHover,
               onDragSelect: (doc, range) => {
@@ -1480,11 +1509,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
                 }
                 handleSelection(doc, range, cfi);
               },
-              onMarkHit: (id) => {
+              onMarkMenu: (id, x, y) => {
                 const ctx = marksCtxRef.current;
                 if (!ctx?.enabled) return;
-                const m = ctx.marks.find((x) => x.id === id);
-                if (m) showBubble(m);
+                openMarkMenu(id, x, y);
               },
             });
 
@@ -1634,19 +1662,56 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             if (!doc || !range) return;
             handleSelection(doc, range, cfiStr);
           });
-          // 高亮点击（v0.3.0 §4.5）：iframe 可交互时 epubjs proxyMouse 把点击
-          // 代理到 SVG 高亮元素 → VIEWS.MARK_CLICKED → rendition "markClicked"
-          // （epub.js 9922/8633/9125）。scroll 模式 iframe 不可交互，
-          // 点击走 bindStageMarks 的命中测试（见上方滚动分支）。
-          rendition.on?.("markClicked", (cfi: unknown, data: unknown) => {
+          // D98：翻页模式左键点高亮不再弹气泡（悬停看内容、右键改删）。
+          // epubjs 的 markClicked 只能拿到 id 与 cfi，拿不到鼠标视口坐标，
+          // 故此处不处理；右键由 stage 上的 contextmenu 命中测试接管（见下）。
+          // 保留打点用于确认 epubjs 的点击代理仍然工作（不影响行为）。
+          rendition.on?.("markClicked", (_cfi: unknown, data: unknown) => {
             const id = (data as { id?: string } | undefined)?.id;
             epubDiag("MARK_CLICKED", `id=${id ?? "-"}`);
-            if (!id) return;
-            const ctx = marksCtxRef.current;
-            if (!ctx?.enabled) return;
-            const m = ctx.marks.find((x) => x.id === id);
-            if (m) showBubble(m);
           });
+          // D98：翻页模式右键菜单。
+          // 关键约束：epubjs 的 DOM_EVENTS（constants.js）只转发
+          // keydown/keyup/mouseup/mousedown/mousemove/click/touch*——**不含 contextmenu**，
+          // 故 iframe 内右键既不会冒泡到宿主，也不会被 epubjs 代理出来。
+          // 解决：直接在 iframe 文档上装 contextmenu 监听（每章渲染时补装）。
+          if (stage) {
+            const installCtx = (doc: Document) => {
+              if (!doc || (doc as Document & { __markCtx?: boolean }).__markCtx) return;
+              (doc as Document & { __markCtx?: boolean }).__markCtx = true;
+              doc.addEventListener("contextmenu", (ev) => {
+                const iframe = iframeOfDoc(containerRef.current, doc);
+                const ir = iframe?.getBoundingClientRect();
+                if (!ir) return;
+                const x = ev.clientX + ir.left;
+                const y = ev.clientY + ir.top;
+                const g = findMarkElAt(stage, x, y);
+                const id = g?.getAttribute("data-id");
+                ev.preventDefault();
+                cancelHover();
+                if (!id) return;
+                openMarkMenu(id, x, y);
+              });
+            };
+            // 首次 + 每次新视图渲染时补装（翻页会重建 iframe 文档）
+            offs.push(() => {
+              /* 清理：文档随视图销毁，无需逐章 remove */
+            });
+            const installAll = () => {
+              rendition.views?.().forEach((v) => {
+                try {
+                  const d = v.contents?.document;
+                  if (d) installCtx(d);
+                } catch {
+                  // 跨域/已销毁：忽略
+                }
+              });
+            };
+            installAll();
+            // rendered 在部分 epubjs 版本/视图复用下可能漏发，relocated 兜底补装
+            rendition.on?.("rendered", installAll);
+            rendition.on?.("relocated", installAll);
+          }
           // 章节级采集：取 relocated 当前章节（ratio 记 0，与 D32 章节级口径一致）。
           const collectPosition = (): PositionReport | null => {
             const h = currentHrefRef.current || (startTarget ?? "");
@@ -2225,59 +2290,51 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           onDelete={onToolbarDelete}
         />
       )}
+      {ctxMenu && (
+        <div
+          className="mark-menu"
+          // D98：fixed + 视口坐标（与悬停提示同理，避免被 overflow/transform 裁切）
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          role="menu"
+          aria-label="标记操作"
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          <button
+            type="button"
+            className="menu-item"
+            onClick={() => {
+              const m = ctxMenu.mark;
+              setCtxMenu(null);
+              cancelHover();
+              marksCtxRef.current?.onEdit(m);
+            }}
+          >
+            编辑标记
+          </button>
+          <button
+            type="button"
+            className="menu-item danger"
+            onClick={() => {
+              const id = ctxMenu.mark.id;
+              setCtxMenu(null);
+              cancelHover();
+              marksCtxRef.current?.onDelete(id);
+            }}
+          >
+            删除标记
+          </button>
+        </div>
+      )}
       {hoverTip && (
         <div
           className="mark-hovertip"
+          // D98：fixed + 视口坐标——跟随光标，且不受 .state/.epub-content 的
+          // overflow 与 transform 影响（后者会裁掉 absolute 子元素）
           style={{ left: hoverTip.x, top: hoverTip.y }}
           role="tooltip"
-          onMouseEnter={() => {
-            // 鼠标移入提示本身时不收起（允许悬停阅读长感悟）
-            if (hoverTimerRef.current !== null) {
-              window.clearTimeout(hoverTimerRef.current);
-              hoverTimerRef.current = null;
-            }
-          }}
-          onMouseLeave={cancelHover}
-          onMouseDown={(e) => e.preventDefault()}
         >
-          <div className="mh-note">{hoverTip.mark.note}</div>
-          <div className="mh-foot">
-            <span className="mh-hint">点击可编辑</span>
-          </div>
-        </div>
-      )}
-      {bubble && (
-        <div
-          className="mark-bubble"
-          style={{ left: bubble.x, top: bubble.y }}
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <div className="mb-quote">{bubble.mark.text || "（无原文）"}</div>
-          {bubble.mark.note && <div className="mb-note">{bubble.mark.note}</div>}
-          <div className="mb-acts">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                const m = bubble.mark;
-                setBubble(null);
-                marksCtxRef.current?.onEdit(m);
-              }}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                const id = bubble.mark.id;
-                setBubble(null);
-                marksCtxRef.current?.onDelete(id);
-              }}
-            >
-              删除
-            </button>
-          </div>
+          <div className="mh-quote">{hoverTip.mark.text}</div>
+          {hoverTip.mark.note && <div className="mh-note">{hoverTip.mark.note}</div>}
         </div>
       )}
       {mode === "page" && (

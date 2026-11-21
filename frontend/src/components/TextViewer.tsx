@@ -124,7 +124,9 @@ export default function TextViewer({ text, mode, resume, getterRef, onReady, mar
     [text, marksCtx?.marks]
   );
   const [toolbar, setToolbar] = useState<ToolbarState | null>(null);
-  const [bubble, setBubble] = useState<{ mark: Mark; x: number; y: number } | null>(null);
+  // D98：悬停只显示标记内容；编辑/删除改走右键菜单（原点击气泡已移除）
+  const [hoverTip, setHoverTip] = useState<{ mark: Mark; x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ mark: Mark; x: number; y: number } | null>(null);
   const jumpNonceRef = useRef(-1);
 
   const clearSelection = () => window.getSelection()?.removeAllRanges();
@@ -303,7 +305,6 @@ export default function TextViewer({ text, mode, resume, getterRef, onReady, mar
           const hit = ctx.marks.find(
             (m) => m.locator.kind === "txt" && start < m.locator.end && end > m.locator.start
           );
-          setBubble(null);
           setToolbar({
             // 以选区中心水平居中（CSS translateX(-50%)），夹紧在容器内
             x: Math.min(
@@ -322,29 +323,107 @@ export default function TextViewer({ text, mode, resume, getterRef, onReady, mar
           });
           return;
         }
-        // 无有效选区：点击高亮 → 气泡（§4.5）
+        // D98：单击高亮不再弹气泡——悬停看内容、右键改删（与 EPUB 口径一致）
         setToolbar(null);
-        const mk = t?.closest?.("mark[data-mark-id]") as HTMLElement | null;
-        if (mk && ctx?.enabled) {
-          const id = mk.getAttribute("data-mark-id");
-          const m = ctx.marks.find((x) => x.id === id);
-          if (m) {
-            const r = mk.getBoundingClientRect();
-            const hostRect = host.getBoundingClientRect();
-            setBubble({
-              mark: m,
-              x: Math.min(Math.max(r.left - hostRect.left, 8), Math.max(8, hostRect.width - 268)),
-              y: r.bottom - hostRect.top + 6,
-            });
-            return;
-          }
-        }
-        setBubble(null);
       });
     };
     host.addEventListener("mouseup", onUp);
     return () => host.removeEventListener("mouseup", onUp);
   }, [isPage]);
+
+  // D97/D98：悬停显示标记内容（原文 + 感悟），鼠标离开立即消失。
+  // 提示浮层 pointer-events:none，故只需跟随光标，不需要「移入提示保持」逻辑。
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let timer: number | null = null;
+    const clear = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+        timer = null;
+      }
+      setHoverTip(null);
+    };
+    const onMove = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement | null;
+      const mk = t?.closest?.("mark[data-mark-id]") as HTMLElement | null;
+      const id = mk?.getAttribute("data-mark-id") ?? null;
+      const ctx = marksCtxRef.current;
+      if (!id || !ctx?.enabled) {
+        clear();
+        return;
+      }
+      const m = ctx.marks.find((x) => x.id === id);
+      if (!m) {
+        clear();
+        return;
+      }
+      // 已在显示同一标记：仅跟随光标（避免长段落里提示停在首次位置）
+      setHoverTip((prev) => (prev && prev.mark.id === m.id ? { ...prev, x: ev.clientX, y: ev.clientY } : prev));
+      if (timer !== null) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        setHoverTip({ mark: m, x: ev.clientX, y: ev.clientY });
+      }, 160);
+    };
+    const onLeave = () => clear();
+    host.addEventListener("mousemove", onMove);
+    host.addEventListener("mouseleave", onLeave);
+    return () => {
+      clear();
+      host.removeEventListener("mousemove", onMove);
+      host.removeEventListener("mouseleave", onLeave);
+    };
+  }, []);
+
+  // D98：右键高亮 → 编辑/删除菜单（与 EPUB 一致）
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const onCtx = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement | null;
+      const mk = t?.closest?.("mark[data-mark-id]") as HTMLElement | null;
+      const id = mk?.getAttribute("data-mark-id");
+      if (!id) return; // 未命中高亮：保留原生右键菜单
+      const ctx = marksCtxRef.current;
+      if (!ctx?.enabled) return;
+      const m = ctx.marks.find((x) => x.id === id);
+      if (!m) return;
+      ev.preventDefault();
+      setHoverTip(null);
+      setCtxMenu({
+        mark: m,
+        x: Math.min(Math.max(4, ev.clientX), Math.max(4, window.innerWidth - 168)),
+        y: Math.min(Math.max(4, ev.clientY), Math.max(4, window.innerHeight - 96)),
+      });
+    };
+    host.addEventListener("contextmenu", onCtx);
+    return () => host.removeEventListener("contextmenu", onCtx);
+  }, []);
+
+  // D98：右键菜单关闭时机（点别处 / Esc / 滚动 / 缩放）
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onDown = (ev: MouseEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t?.closest?.(".mark-menu")) return;
+      close();
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [ctxMenu]);
 
   // 工具条动作（§4.3/4.4/4.6）
   const onToolbarColor = (color: Mark["color"]) => {
@@ -486,40 +565,6 @@ export default function TextViewer({ text, mode, resume, getterRef, onReady, mar
             onDelete={onToolbarDelete}
           />
         )}
-        {bubble && (
-          <div
-            className="mark-bubble"
-            style={{ left: bubble.x, top: bubble.y }}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <div className="mb-quote">{bubble.mark.text || "（无原文）"}</div>
-            {bubble.mark.note && <div className="mb-note">{bubble.mark.note}</div>}
-            <div className="mb-acts">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const m = bubble.mark;
-                  setBubble(null);
-                  marksCtxRef.current?.onEdit(m);
-                }}
-              >
-                编辑
-              </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => {
-                  const id = bubble.mark.id;
-                  setBubble(null);
-                  marksCtxRef.current?.onDelete(id);
-                }}
-              >
-                删除
-              </button>
-            </div>
-          </div>
-        )}
         {isPage && totalPages > 1 && (
           <div
             className={"txt-pager" + (pager.visible ? " show" : "")}
@@ -578,38 +623,44 @@ export default function TextViewer({ text, mode, resume, getterRef, onReady, mar
           onDelete={onToolbarDelete}
         />
       )}
-      {bubble && (
+      {hoverTip && (
+        <div className="mark-hovertip" style={{ left: hoverTip.x, top: hoverTip.y }} role="tooltip">
+          <div className="mh-quote">{hoverTip.mark.text}</div>
+          {hoverTip.mark.note && <div className="mh-note">{hoverTip.mark.note}</div>}
+        </div>
+      )}
+      {ctxMenu && (
         <div
-          className="mark-bubble"
-          style={{ left: bubble.x, top: bubble.y }}
-          onMouseDown={(e) => e.preventDefault()}
+          className="mark-menu"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          role="menu"
+          aria-label="标记操作"
+          onContextMenu={(e) => e.preventDefault()}
         >
-          <div className="mb-quote">{bubble.mark.text || "（无原文）"}</div>
-          {bubble.mark.note && <div className="mb-note">{bubble.mark.note}</div>}
-          <div className="mb-acts">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                const m = bubble.mark;
-                setBubble(null);
-                marksCtxRef.current?.onEdit(m);
-              }}
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                const id = bubble.mark.id;
-                setBubble(null);
-                marksCtxRef.current?.onDelete(id);
-              }}
-            >
-              删除
-            </button>
-          </div>
+          <button
+            type="button"
+            className="menu-item"
+            onClick={() => {
+              const m = ctxMenu.mark;
+              setCtxMenu(null);
+              setHoverTip(null);
+              marksCtxRef.current?.onEdit(m);
+            }}
+          >
+            编辑标记
+          </button>
+          <button
+            type="button"
+            className="menu-item danger"
+            onClick={() => {
+              const id = ctxMenu.mark.id;
+              setCtxMenu(null);
+              setHoverTip(null);
+              marksCtxRef.current?.onDelete(id);
+            }}
+          >
+            删除标记
+          </button>
         </div>
       )}
     </section>
