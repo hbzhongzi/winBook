@@ -430,4 +430,17 @@ describe("settings v0.3.0（标记记录开关 markEnabled）", () => {
     expect(s.fontSize).toBe(18);
     expect(loadSettings().markEnabled).toBe(false);
   });
+
+  it("默认高亮色：缺省 yellow；白名单外回落 yellow", () => {
+    expect(DEFAULT_SETTINGS.markDefaultColor).toBe("yellow");
+    expect(loadSettings().markDefaultColor).toBe("yellow");
+    expect(normalizeSettings({ markDefaultColor: "green" }).markDefaultColor).toBe("green");
+    expect(normalizeSettings({ markDefaultColor: "rainbow" as never }).markDefaultColor).toBe("yellow");
+    expect(normalizeSettings({ markDefaultColor: undefined }).markDefaultColor).toBe("yellow");
+    // 旧配置（无两字段）载入后均为缺省值
+    localStorage.setItem("bookeditor.settings.v4", JSON.stringify({ theme: "dark" }));
+    const s = loadSettings();
+    expect(s.markEnabled).toBe(true);
+    expect(s.markDefaultColor).toBe("yellow");
+  });
 });

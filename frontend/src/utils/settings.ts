@@ -2,6 +2,7 @@
 // 行距、正文字体、正文页边距（v0.2.4 版式三件套）、阅读快捷键键位（v0.2.5 F24）、
 // PDF 适配三件套（v0.2.9：pdfFit/pdfZoom/pdfDpr，存储键与 version 均不变，D67）、
 // 标记记录总开关（v0.3.0：markEnabled，同样不改 version）。
+// 新标记默认高亮色（v0.3.0：markDefaultColor，白名单四色，缺省 yellow）。
 // 持久化到 localStorage；变更通过订阅机制广播，让已打开的书籍即时生效（无需重开图书）。
 // v3（含版式三件套）全量迁移、v2 全量迁移、v1（仅 epubPreloadCount）只读保留，均不删除。
 
@@ -11,6 +12,7 @@ import {
   normalizeHotkeyMap,
   type HotkeyMap,
 } from "./readerHotkeys";
+import { MARK_COLORS, type MarkColor } from "./marks";
 import {
   PDF_FIT_DEFAULT,
   PDF_ZOOM_DEFAULT,
@@ -73,6 +75,8 @@ export type Settings = {
   pdfDpr: boolean;
   /** 标记记录总开关（v0.3.0 F31）：关闭后不弹划词工具条、面板入口隐藏；存量缺省 true */
   markEnabled: boolean;
+  /** 新标记默认高亮色（v0.3.0）：写感悟/写想法入口的初始色，可随时改色；缺省 yellow */
+  markDefaultColor: MarkColor;
 };
 
 export const PRELOAD_MIN = 0;
@@ -127,6 +131,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pdfZoom: PDF_ZOOM_DEFAULT,
   pdfDpr: true,
   markEnabled: true,
+  markDefaultColor: "yellow",
 };
 
 type Listener = (s: Settings) => void;
@@ -196,6 +201,11 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     pdfDpr: typeof r.pdfDpr === "boolean" ? r.pdfDpr : true,
     // 标记记录开关（v0.3.0）：旧配置缺字段默认开启，存量零回归
     markEnabled: typeof r.markEnabled === "boolean" ? r.markEnabled : true,
+    // 新标记默认色（v0.3.0）：白名单外回落 yellow
+    markDefaultColor:
+      typeof r.markDefaultColor === "string" && (MARK_COLORS as string[]).includes(r.markDefaultColor)
+        ? (r.markDefaultColor as MarkColor)
+        : "yellow",
   };
 }
 
