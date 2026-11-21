@@ -17,6 +17,8 @@ import type { MarksContext } from "./marksContext";
 const hotkeyBoundDocs = new WeakSet<Document>();
 /** 已绑定「点击消散工具条/气泡」的章节文档（v0.3.0，page 模式 iframe 吞 mousedown） */
 const markDismissBoundDocs = new WeakSet<Document>();
+/** 已绑定「翻页模式悬停提示」的章节文档（D100，page 模式 iframe 可交互，宿主收不到 mousemove） */
+const hoverBoundDocs = new WeakSet<Document>();
 
 // epubjs 类型声明不完整，按使用面定义最小接口
 type EpubNavItem = {
@@ -204,8 +206,29 @@ const MARK_HL_FILLS: Record<MarkColor, Record<string, string>> = {
   blue: { fill: "#bfdbfe", "fill-opacity": "0.6", "mix-blend-mode": "normal" },
   pink: { fill: "#fbcfe8", "fill-opacity": "0.6", "mix-blend-mode": "normal" },
 };
-/** 拖拽选词的最小位移（px）：小于视为单击（走「点击高亮 → 气泡」） */
+/** 拖拽选词的最小位移（px）：横向门槛。小于视为单击 */
 const MARK_DRAG_MIN = 6;
+/**
+ * D100：纵向拖拽门槛（px）。
+ * 滚动模式（scrolled-doc）里用户选词必然带纵向偏移，但纵向拖动也最容易与
+ * 滚轮/触控板滑动混淆，故门槛略高于横向；两者任一达标即视为选词拖动。
+ */
+const MARK_DRAG_VERT_MIN = 12;
+
+/**
+ * D100：判定「按下 → 松开」是否构成选词拖拽（纯函数，便于测试）。
+ *
+ * 为什么不用欧氏距离：滚动模式是 scrolled-doc，正文纵向滚动，用户选词几乎
+ * 必然带纵向偏移——选到行末要下带半行（约 8px）、选整段要下带上百像素。
+ * 早期用 `hypot(dx,dy) > 6`，纯纵向小幅拖动在窄行文本上常常不足 6px，
+ * 表现为「滚动模式标记不了」。改为按方向分别判定：
+ * - 横向 ≥ MARK_DRAG_MIN（6px）：正常从左往右扫词；
+ * - 纵向 ≥ MARK_DRAG_VERT_MIN（12px）：跨行选段；门槛更高是因为纵向手势
+ *   更容易与滚动混淆，避免轻微抖动就弹工具条。
+ */
+export function isMarkDrag(dx: number, dy: number): boolean {
+  return Math.abs(dx) >= MARK_DRAG_MIN || Math.abs(dy) >= MARK_DRAG_VERT_MIN;
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -598,21 +621,19 @@ function bindStageMarks(
   let down: { x: number; y: number } | null = null;
   const cleanups: (() => void)[] = [];
 
-  /** 命中提示浮层自身（提示跟随光标，需豁免，避免抖动/自激） */
-  const overTip = (ev: MouseEvent): boolean => {
-    const tipEl = stage.querySelector<HTMLElement>(".mark-hovertip");
-    if (!tipEl) return false;
-    const tr = tipEl.getBoundingClientRect();
-    return (
-      ev.clientX >= tr.left && ev.clientX <= tr.right &&
-      ev.clientY >= tr.top && ev.clientY <= tr.bottom
-    );
-  };
+  /**
+   * D100 踩坑（必读）：**不能用 `stage.querySelector(".mark-hovertip")` 做豁免**。
+   *
+   * 提示浮层由 React 渲染在 stage 的**兄弟节点**（.epub-wrap 下的 .mark-hovertip），
+   * 不是 stage 的子节点，所以该 find 恒返回 null → overTip 恒 false → 豁免从未生效。
+   * 原意是「提示跟随光标时不要自激」，但真正的自激源在别处：
+   * 提示 `pointer-events:none` 已保证光标不落在提示上，故此处不做任何豁免。
+   * 保留此注释是为了防止后续又把这个死代码加回来。
+   */
 
   const onMove = (ev: MouseEvent) => {
     // 拖拽选词过程中不弹悬停提示（会把工具条位置挤乱）
     if (down) return;
-    if (overTip(ev)) return; // D98：提示跟随光标，落在提示上时保持不动
     const g = findMarkElAt(stage, ev.clientX, ev.clientY);
     handlers.onHover(g?.getAttribute("data-id") ?? null, ev.clientX, ev.clientY);
   };
@@ -628,7 +649,11 @@ function bindStageMarks(
     const t = ev.target as HTMLElement | null;
     if (t?.closest?.(".mark-toolbar, .mark-bubble, .mark-menu")) return;
     const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
-    if (!iframe) return;
+    if (!iframe) {
+      // D100 诊断：按下点没落在任何 iframe 内（例如落在高亮 SVG 覆盖层/滚动条上）
+      epubDiag("DRAG_DOWN_NOIFRAME", `x=${ev.clientX} y=${ev.clientY} tag=${t?.tagName ?? "-"}`);
+      return;
+    }
     const p = iframeContentPoint(iframe, ev);
     if (!p) return;
     down = { x: p.x, y: p.y };
@@ -649,9 +674,15 @@ function bindStageMarks(
   const onUp = (ev: MouseEvent) => {
     const start = down;
     down = null;
-    if (!start || ev.button !== 0) return;
+    if (ev.button !== 0) return;
     const t = ev.target as HTMLElement | null;
     if (t?.closest?.(".mark-toolbar, .mark-bubble, .mark-menu")) return;
+    if (!start) {
+      // D100 诊断：mouseup 到达但 mousedown 没记下起点——说明起点那一下没命中 iframe，
+      // 或命中点落在宿主元素上（如高亮 SVG 覆盖层）。这是「滚动模式选不中」的头号嫌疑。
+      epubDiag("DRAG_UP_NOSTART", `x=${ev.clientX} y=${ev.clientY}`);
+      return;
+    }
     const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
     if (!iframe) return;
     let doc: Document | null = null;
@@ -663,7 +694,13 @@ function bindStageMarks(
     if (!doc?.body) return;
     const end = iframeContentPoint(iframe, ev);
     if (!end) return;
-    if (Math.hypot(end.x - start.x, end.y - start.y) > MARK_DRAG_MIN) {
+    const dx = Math.abs(end.x - start.x);
+    const dy = Math.abs(end.y - start.y);
+    const isDrag = isMarkDrag(dx, dy);
+    // D100 诊断：滚动模式选不中时先看这条——dx/dy 是否达到判定门槛。
+    // 没有这条日志 = mousedown 没命中 iframe（见 DRAG_DOWN_NOIFRAME / DRAG_UP_NOSTART）。
+    epubDiag("DRAG_UP", `dx=${Math.round(dx)} dy=${Math.round(dy)} isDrag=${isDrag}`);
+    if (isDrag) {
       // 拖拽选词：两端 caret → Range（坐标均为 iframe 文档内坐标）
       const a = caretRangeAt(doc, start.x, start.y);
       const b = caretRangeAt(doc, end.x, end.y);
@@ -1331,6 +1368,57 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               epubDiag("MARK_DISMISS", "iframe mousedown");
               setToolbar(null);
               // D98：气泡已移除（悬停看内容、右键改删）
+            });
+          }
+          // D100 修复：**翻页模式悬停看不到**。
+          // 根因：悬停判定只挂在滚动模式的 stage 上（bindStageMarks）。翻页模式 iframe
+          // 是**可交互**的（未设 pointer-events:none），鼠标事件全部进入 iframe 文档，
+          // 不会冒泡到宿主 stage —— 所以翻页模式从来没有悬停判定，日志里也只有滚动
+          // 模式那次会话的 HOVER_TIP。
+          // 解决：在章节文档上直接挂 mousemove，命中高亮 <g> 后换算成宿主视口坐标，
+          // 复用同一个 scheduleHover（提示浮层在宿主文档，坐标必须换算）。
+          // 同一文档 relocated 会再次触发本钩子，用 WeakSet 去重防重复绑定。
+          if (isPage && inner && !hoverBoundDocs.has(inner)) {
+            hoverBoundDocs.add(inner);
+            // 诊断节流：翻页模式 mousemove 频率高，只在「命中结果变化」时打点，
+            // 否则每条 hover 都在日志里刷屏、反而看不出问题。
+            let lastSig = "";
+            inner.addEventListener("mousemove", (ev: MouseEvent) => {
+              const iframe = iframeOfDoc(containerRef.current, inner);
+              const ir = iframe?.getBoundingClientRect();
+              if (!ir) {
+                if (lastSig !== "noiframe") {
+                  lastSig = "noiframe";
+                  epubDiag("HOVER_PAGE_NOIFRAME", "iframe 未找到（文档可能已回收）");
+                }
+                return;
+              }
+              const x = ev.clientX + ir.left;
+              const y = ev.clientY + ir.top;
+              const g = findMarkElAt(container, x, y);
+              const id = g?.getAttribute("data-id") ?? null;
+              const sig = id ?? "none";
+              if (sig !== lastSig) {
+                lastSig = sig;
+                epubDiag(
+                  "HOVER_PAGE_HIT",
+                  `id=${id ?? "-"} x=${Math.round(x)} y=${Math.round(y)} svgCount=${container.querySelectorAll("svg g[data-id]").length}`
+                );
+              }
+              scheduleHover(id, x, y);
+            });
+            // 鼠标移出 iframe：收起提示（否则提示会孤留在正文上）。
+            // 用 mouseout + relatedTarget 判空：iframe 文档的 mouseleave 在光标直接
+            // 移出 iframe 边界时不一定触发（Chrome 下跨文档边界只发 mouseout）。
+            inner.addEventListener("mouseout", (ev: MouseEvent) => {
+              const to = ev.relatedTarget as Node | null;
+              if (!to) {
+                scheduleHover(null, 0, 0);
+                return;
+              }
+              // 移出文档根节点也算离开
+              const root = inner.documentElement;
+              if (root && !root.contains(to)) scheduleHover(null, 0, 0);
             });
           }
         });

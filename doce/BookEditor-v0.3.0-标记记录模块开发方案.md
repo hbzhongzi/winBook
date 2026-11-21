@@ -1,8 +1,8 @@
 # BookEditor v0.3.0 —— 标记记录模块 开发方案
 
-> 状态：**T1–T12 实施完成 + D76–D97 真机反馈修复与体验增强**（2026-11-21）。
-> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。
-> 验证：`tsc --noEmit` PASS；`vitest run` 221 例全绿（marks 50 例，含 D76/D77 回归 2 例与 D96 章节组织 5 例；settings 补 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D98.exe`）。A83–A97 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。
+> 状态：**T1–T12 实施完成 + D76–D100 真机反馈修复与体验增强**（2026-11-21）。
+> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
+> 验证：`tsc --noEmit` PASS；`vitest run` **227 例全绿**（marks 50 例，含 D76/D77 回归 2 例与 D96 章节组织 5 例；settings 补 6 例；D100 新增 `markDrag.test.ts` 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D100.exe`）。A83–A97 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。**D89 翻页划词工具条、D95 弹窗视觉、D98 悬停/右键、D100 双模式悬停与滚动选词，均待用户真机确认后方可标为通过。**
 > 取证通道：D87 起 EPUB 诊断自动节流落盘到 exe 同目录 `epub-diag.log`（`utils/epubDiag.ts` + Go `DiagLogPath()`/`WriteDiagLog()`），不再依赖点按钮；D76–D95 全部修复均据该日志定位。
 > 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互；**§4.11 面板形态已由 D95 改为弹窗浮层，HTML 基线此点未同步更新**）。
 > 上游版本：v0.2.9（PDF 显示优化，A67–A74 待真机）。本版以在三个 Viewer 内挂载划词监听与高亮渲染为主：TXT 渲染层按 D68 改片段数组，PDF 按 D73 退化为页级，Go 侧零改动。
@@ -236,6 +236,8 @@ markDefaultColor: MarkColor;
 | D96 | §4.14 分组口径「按章节分组、组内时间倒序」，分组顺序为首次出现顺序 | **按目录树组织**：`EpubViewer` 经 `tocNodesWithPath()` 回传 `{href,label,depth,order,labels}` 树路径（走 `onTocContext` → App `tocCtx` → 面板）；`marks.ts` 新增 `markChapterPaths()`（按 `locator.chapter` **精确匹配**目录标签反查路径，不模糊猜）与 `sortChapterGroups()`（按 order 字典序，父章→子节；无路径分组殿后）；面板分组加 `.mp-depth-0/1/2` 缩进、父章面包屑 `.gpath`、当前章 `.gcur` 标识 | 用户反馈「标记可以按章节显示吗」——原实现虽按 `locator.chapter` 分组，但**顺序是首次出现**、无层级、看不出归属（截图里两个分组平铺同字号）。标签不匹配时宁可不归类（错归档比不归类更误导）；切书/换格式时 App 清空 `tocCtx` 防串书 |
 | D97 | §4.5 仅「点击高亮 → 气泡」 | **悬停提示** `.mark-hovertip`：`bindStageMarks` 增 `mousemove`/`mouseleave` 命中，稳定停留后浮出；新增 `HOVER_TIP` 打点 | 用户首轮要求「悬停显示感悟」；后经 D98 修订为显示全部标记内容 |
 | D98 | D97 口径：悬停只显示**感悟**、点击仍弹气泡（可编辑/删除） | **按用户最终要求重定**：① 悬停显示**标记内容**（原文 + 感悟，不只是感悟），悬浮即显、鼠标离开立即消失；② 提示 `position:fixed` + 视口坐标跟随光标、`pointer-events:none` 完全穿透（「移开即消失」才成立，不再需要「移入提示保持」豁免）；③ **右键高亮 → 「编辑标记 / 删除标记」菜单**（`.mark-menu`，fixed 定位，靠近边界夹紧；点别处/Esc/滚动/缩放关闭）；④ **左键点击高亮的 `mark-bubble` 气泡整体移除**（EPUB 与 TXT 两处），`showBubble`/`bubble` state 一并删除 | 用户明确要求「悬停显示内容 鼠标离开消失，右键可以编辑删除，悬停只显示标记内容」——原「点击弹气泡」不符合直觉。三个实现要点：① epubjs `DOM_EVENTS` 常量**不含 contextmenu**（只有 keydown/keyup/mouseup/mousedown/mousemove/click/touch*），翻页模式 iframe 内右键既冒泡不出也代理不到 → 直接在 iframe document 上装 `contextmenu`，并在 `rendered`/`relocated` 时对新文档补装；② TXT 侧同口径（`mousemove` 命中 `mark[data-mark-id]`、`contextmenu` 弹菜单）；③ 悬停判定条件由「有感悟(note)」改为「有原文(text)」，独立想法无原文不参与悬停 |
+| D99 | 翻页模式可标记、滚动模式标记不了；翻页模式悬停看不到 | **D100 一并修复**（见下行）。D99 交付的 `book-editor-D99.exe` 未含此修复，用户真机反馈后定位 | 用户原话：「滚动模式悬停能看到 但是 翻页模式悬停看不到；翻页模式可以进行标记 但是 滚动模式标记不了」 |
+| D100 | ① 滚动模式拖拽选词判定为欧氏距离 `hypot(dx,dy) > 6`；② 悬停判定只挂在滚动模式的 stage 上 | **两处根因，各自独立**：<br>① **滚动模式标记不了** — scrolled-doc 正文纵向滚动，选词必然带纵向偏移（选到行末下带半行约 8px），而 `hypot > 6` 对「纯纵向小幅拖动」门槛过高，斜向才勉强能过。改为按方向判定：`isMarkDrag()` 抽为可测纯函数，**横向 ≥ 6px 或纵向 ≥ 12px**（纵向门槛更高，因纵向手势更易与滚动混淆）。<br>② **翻页模式悬停看不到** — 翻页模式 iframe **未设** `pointer-events:none`（可交互），鼠标事件进 iframe 文档、不冒泡到宿主 stage，而悬停判定只注册在 stage 上 → 翻页模式从来没有悬停通道（日志里只有滚动模式那次会话的 `HOVER_TIP`，可为证）。改为在 `rendition.hooks.content` 里对章节文档直接挂 `mousemove`，命中后加 `iframe.getBoundingClientRect()` 换算宿主坐标，复用同一个 `scheduleHover`；`WeakSet` 去重防 relocated 重复绑定；离开用 `mouseout + relatedTarget` 判空（Chrome 跨文档边界只发 mouseout，`mouseleave` 不一定触发） | 顺序验证：[D99 日志](./) 只有 `mode=scroll` 一次会话的 `HOVER_TIP`，**翻页模式零悬停打点** → 反证通道缺失而非命中失败。附带清理：`bindStageMarks` 里 `overTip()` 用 `stage.querySelector(".mark-hovertip")` 做豁免是**死代码**（提示浮层渲染在 stage 的兄弟节点，恒返回 null），已删除并留注释防回归——提示本身 `pointer-events:none` 已保证不自激。新增诊断：`DRAG_UP`（dx/dy/isDrag）、`DRAG_UP_NOSTART`（mouseup 到达但 mousedown 未命中 iframe）、`DRAG_DOWN_NOIFRAME`、`HOVER_PAGE_HIT`（翻页命中，按 id 变化节流）、`HOVER_PAGE_NOIFRAME` |
 
 **风险**
 - EPUB iframe 内选词的坐标换算已有先例（`bindStageInteraction` 的 `iframeContentPoint`），工具条定位复用该函数，不新造轮子。
@@ -243,6 +245,8 @@ markDefaultColor: MarkColor;
 - 导出大量标记时 Markdown 字符串拼接在渲染线程同步执行（2000 条 ≈ 数毫秒），可接受；不引入 Web Worker。
 - EPUB 翻页模式 epubjs iframe 带 `translateZ(0)` 合成层，跳章瞬间宽度可达数万像素（实测 43764px）；**任何关于层叠/宽度的推断都必须先由 `epub-diag.log` 的几何打点实证**（D84/D88/D93 三次教训）。
 - `rendition.resize()` 严禁传百分比字符串（D88 会引发宽度指数暴涨）；参数必须是由 `getBoundingClientRect()` 实测的 floor 像素。
+- **两种模式的鼠标事件通道完全不同，任何鼠标交互都必须双路实现**（D100 教训）：滚动模式 iframe 被设 `pointer-events:none`，事件落在宿主 stage（`bindStageMarks`）；翻页模式 iframe 可交互，事件进 iframe 文档、宿主收不到，必须在 `rendition.hooks.content` 里对章节文档直挂监听并用 `getBoundingClientRect()` 换算坐标。**不要假设「在 stage 上挂一次就两种模式都能用」**——D98 的右键（`contextmenu`）与 D100 的悬停（`mousemove`）都栽在这个假设上，两次都是同一根因。
+- 查找提示浮层/菜单等 React 渲染的浮层，**不能用 `stage.querySelector`**——它们是 stage 的兄弟节点，恒返回 null。曾据此写出一个永假的「豁免」判断（D100 已删）。
 - 平铺 `toc.ncx` 无真实层级信息，D91 只能启发式推断；个别落在分页边界且无锚点的故事仍被判为父项，属已知残留，非实现缺陷。
 
 ---
