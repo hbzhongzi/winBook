@@ -22,7 +22,10 @@ open_file 后 move_to(40,60) 避开右上角通知弹窗区（与 smoke_shelf �
 对话框控件坐标（客户区；2026-10-21 于新构建实测标定，calib8/calib9：
   .settings-dialog 固定 height:600px → 对话框客户区 y 111..710 恒定，
   nav/主题卡/色板/滑块/footer 坐标在「主题 × 窗格」两维下零漂移）：
-  nav 列 x=394：阅读体验 y=197 / 界面外观 y=234 / 快捷键 y=271 / 高级 y=308（pitch 37）
+  nav 列 x=394：阅读体验 y=197 / 界面外观 y=234 / 标记记录 y=271 /
+    快捷键 y=308 / 高级 y=345（pitch 37）
+    （v0.3.0 起 nav 插入「标记记录」项：快捷键/高级较 v0.2.9 各下移 37px；
+     标记记录窗格由 smoke_marks.py 覆盖）
   主题卡（appearance 窗格，4 等宽卡）：浅色 x=523 / 深色 x=639 / 护眼 x=755 /
     羊皮纸 x=870，卡中心 y=260
   强调色 6 板 y=415：蓝 502 / 靛蓝 542 / 绿 582 / 琥珀 622 / 玫红 662 / 青 703
@@ -56,7 +59,7 @@ FIXTURE = sys.argv[1] if len(sys.argv) > 1 else "12.epub"
 
 GEAR = (1241, 26)  # 客户端坐标（实测）
 NAV = {"reading": (394, 197), "appearance": (394, 234),
-       "hotkeys": (394, 271), "advanced": (394, 308)}
+       "marks": (394, 271), "hotkeys": (394, 308), "advanced": (394, 345)}
 THEME_DARK = (639, 260)
 ACCENT_GREEN = (582, 415)
 FONT_SLIDER = (700, 563)
