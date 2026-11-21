@@ -349,9 +349,10 @@ async function settleAndCheck(
   await sleep(SETTLE_MS);
   if (iframeIsZeroSized(container)) {
     try {
+      epubDiag("SETTLE_ZERO_RESIZE", "iframe<40px; resize clears views");
       rendition.resize("100%", "100%");
-    } catch {
-      // 忽略重布局异常
+    } catch (e) {
+      epubDiag("SETTLE_ZERO_ERR", (e as { message?: string })?.message ?? String(e));
     }
     await sleep(500);
   }
@@ -1719,7 +1720,61 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
       return true;
     });
 
-    const onResize = () => renditionRef.current?.resize("100%", "100%");
+    // D83：rendition.resize() 内部调用 manager.clear()，会销毁并清空全部 views
+    // （epubjs 的 resize 不做「尺寸未变提前返回」）。epubjs 仅靠 onResized()→
+    // display(location.start.cfi) 自愈；首次 display 刚完成时 location 可能尚未就绪，
+    // ResizeObserver 首次回调（observe 后立即触发一次）会在此时 clear 掉首章且自愈
+    // 失败 → 正文永久纯白。日志证据：after-display frames=1 → 700ms 后
+    // after-settle-strict frames=0；jump display 短暂有内容（len=113151）后又空白。
+    // 叠加 D80 把 continuous 的 check() patch 成 no-op、wm.sync() 在 views=0 时直接
+    // return，清空后无任何自愈路径。修复：resize 后延迟复检 views，若仍为空则主动
+    // 重显当前目标（不依赖 location 自愈）。
+    let resizeBaseline: { w: number; h: number } | null = null;
+    const resizeWithRecovery = () => {
+      const rendition = renditionRef.current;
+      if (!rendition || destroyed) return;
+      epubDiag("RESIZE_BEGIN", "resize->manager.clear()");
+      try {
+        rendition.resize("100%", "100%");
+      } catch (e) {
+        epubDiag("RESIZE_ERR", (e as { message?: string })?.message ?? String(e));
+        return;
+      }
+      window.setTimeout(() => {
+        if (destroyed || renditionRef.current !== rendition) return;
+        const views = rendition.manager?.views?.all?.() ?? [];
+        if (views.length > 0) {
+          epubDiag("RESIZE_OK", `views=${views.length}`);
+          probeEpubDom(container, rendition, "after-resize-ok");
+          windowRef.current?.sync();
+          return;
+        }
+        // epubjs 自愈失败（location 未就绪 / display 挂起）：主动重显当前目标
+        const location = rendition as unknown as {
+          location?: { start?: { cfi?: string } };
+        };
+        const target =
+          location.location?.start?.cfi ||
+          currentCfiRef.current ||
+          tocTargetsRef.current[0]?.href;
+        epubDiag("RESIZE_RECOVER", `target=${target ?? "(none)"}`);
+        void withTimeout(Promise.resolve(rendition.display(target)), OPEN_TIMEOUT_MS)
+          .then(() => {
+            epubDiag("RESIZE_RECOVER_OK", `target=${target ?? "(none)"}`);
+            probeEpubDom(container, rendition, "after-resize-recover");
+            windowRef.current?.sync();
+          })
+          .catch((e) => {
+            epubDiag(
+              "RESIZE_RECOVER_FAIL",
+              (e as { message?: string })?.message ?? String(e)
+            );
+            probeEpubDom(container, rendition, "after-resize-recover-fail");
+          });
+      }, 600);
+    };
+
+    const onResize = () => resizeWithRecovery();
     window.addEventListener("resize", onResize);
 
     // 主题/字号变更：对已加载的章节文档重新注入阅读样式（iframe 独立文档，
@@ -1741,9 +1796,29 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     // epubjs 只监听 window.resize，不感知容器自身尺寸变化。目录侧栏出现后
     // 正文区宽度会从满宽收窄到「容器宽 - 224px」，若不主动 resize，
     // iframe 会保持旧宽度（右侧被裁掉一截，且行宽与可视宽度不一致）。
-    // ResizeObserver 首次回调也会触发一次 resize，epubjs 内部对尺寸未变会提前返回，
-    // 因此不会造成重复重排。resize 会让 epubjs 以当前 location 重新 display。
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(onResize);
+    // D83：ResizeObserver 的首次回调在 observe() 后立即触发，此时首次 display
+    // 刚完成、location 可能未就绪；若照旧 resize 会 clear 掉首章且自愈失败 → 纯白。
+    // 故首次回调只建立尺寸基线，不上报 resize；后续仅当尺寸真正变化时才 resize。
+    const ro =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver((entries) => {
+            const cr = entries[0]?.contentRect;
+            if (!cr || destroyed) return;
+            const w = Math.round(cr.width);
+            const h = Math.round(cr.height);
+            if (!resizeBaseline) {
+              resizeBaseline = { w, h };
+              epubDiag("RO_BASELINE", `${w}x${h}`);
+              return;
+            }
+            if (Math.abs(w - resizeBaseline.w) < 2 && Math.abs(h - resizeBaseline.h) < 2) {
+              return;
+            }
+            resizeBaseline = { w, h };
+            epubDiag("RO_CHANGED", `${w}x${h}`);
+            resizeWithRecovery();
+          });
     ro?.observe(container);
 
     // 预加载章节数变更：立即让窗口管理器按新值重算（无需重开图书）
