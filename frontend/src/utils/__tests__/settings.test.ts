@@ -400,3 +400,34 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(s.pdfDpr).toBe(true);
   });
 });
+
+describe("settings v0.3.0（标记记录开关 markEnabled）", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("缺省 true：DEFAULT_SETTINGS 与旧配置（无该字段）均为开启", () => {
+    expect(DEFAULT_SETTINGS.markEnabled).toBe(true);
+    expect(loadSettings().markEnabled).toBe(true);
+    localStorage.setItem("bookeditor.settings.v4", JSON.stringify({ theme: "dark", readerMode: "page" }));
+    const s = loadSettings();
+    expect(s.theme).toBe("dark"); // 旧配置其余字段保真
+    expect(s.markEnabled).toBe(true); // 缺字段默认开启（存量零回归）
+  });
+
+  it("normalizeSettings 逐字段校验：显式布尔才采用", () => {
+    expect(normalizeSettings({ markEnabled: false }).markEnabled).toBe(false);
+    expect(normalizeSettings({ markEnabled: true }).markEnabled).toBe(true);
+    expect(normalizeSettings({ markEnabled: "yes" as never }).markEnabled).toBe(true);
+    expect(normalizeSettings({ markEnabled: undefined }).markEnabled).toBe(true);
+  });
+
+  it("保存关闭后可读回，且不影响其余字段", () => {
+    saveSettings({ readerMode: "page", fontSize: 18 });
+    const s = saveSettings({ markEnabled: false });
+    expect(s.markEnabled).toBe(false);
+    expect(s.readerMode).toBe("page");
+    expect(s.fontSize).toBe(18);
+    expect(loadSettings().markEnabled).toBe(false);
+  });
+});
