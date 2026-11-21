@@ -461,7 +461,8 @@ pre.txt-viewer {
   position: absolute;
   right: 16px;
   bottom: 16px;
-  z-index: 31;
+  /* D87：盖过 loading-overlay(z-index:900)，避免加载遮罩反复出现时按钮点不到 */
+  z-index: 1001;
   border: 1px solid var(--border, rgba(0, 0, 0, 0.1));
   background: var(--bg-2, rgba(0, 0, 0, 0.05));
   color: var(--text-3);
@@ -477,7 +478,7 @@ pre.txt-viewer {
   position: absolute;
   right: 16px;
   bottom: 52px;
-  z-index: 30;
+  z-index: 1001;
   width: min(620px, calc(100% - 32px));
   display: flex;
   flex-direction: column;

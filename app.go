@@ -77,6 +77,25 @@ func (a *App) SupportedExts() []string {
 	return []string{"epub", "pdf", "txt"}
 }
 
+// DiagLogPath 诊断日志文件路径（可执行文件同目录），前端据此提示用户发送文件。
+func (a *App) DiagLogPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "epub-diag.log"
+	}
+	return filepath.Join(filepath.Dir(exe), "epub-diag.log")
+}
+
+// WriteDiagLog 将 EPUB 诊断文本整体写入日志文件（覆盖写）。
+// 取证通道：生产构建下前端按钮可能被加载遮罩遮挡，落盘文件始终可取。
+func (a *App) WriteDiagLog(text string) error {
+	path := a.DiagLogPath()
+	if err := os.WriteFile(path, []byte(text), 0644); err != nil {
+		return fmt.Errorf("WRITE_DIAG_FAILED: %w", err)
+	}
+	return nil
+}
+
 // openBookAt 读取并组装指定路径的图书数据。
 func openBookAt(selection string) (*BookData, error) {
 	// D1: 先判格式，不支持直接拒绝，不读取文件内容

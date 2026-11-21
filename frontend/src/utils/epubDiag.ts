@@ -3,8 +3,24 @@
 // 导致「EPUB 解析失败」无法追溯是哪一步触发（book.opened / display / 空白兜底 / resume）。
 // 本模块只做记录与读取，不影响打开流程判定。
 
+import { WriteDiagLog } from "../../wailsjs/go/main/App";
+
 const DIAG_KEY = "bookeditor.epub.diag.v1";
 const MAX = 200;
+
+// D87：落盘节流——诊断条目高频写入时避免每条都触发一次文件 IO。
+let diskFlushTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleDiskFlush(): void {
+  if (diskFlushTimer) return;
+  diskFlushTimer = setTimeout(() => {
+    diskFlushTimer = null;
+    try {
+      void WriteDiagLog(getEpubDiagText(200)).catch(() => undefined);
+    } catch {
+      // Wails 绑定不可用（开发期浏览器）：忽略
+    }
+  }, 400);
+}
 
 export type EpubDiagEntry = { t: number; code: string; detail?: string };
 
@@ -31,6 +47,7 @@ export function epubDiag(code: string, detail?: string): void {
     all.push(entry);
     const trimmed = all.length > MAX ? all.slice(-MAX) : all;
     localStorage.setItem(DIAG_KEY, JSON.stringify(trimmed));
+    scheduleDiskFlush(); // D87：同步落盘，取证不依赖点诊断按钮
   } catch {
     // 存储不可用：仅 console
   }
