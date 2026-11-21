@@ -1,8 +1,8 @@
 # BookEditor v0.3.0 —— 标记记录模块 开发方案
 
-> 状态：**T1–T10 实施完成 + D76–D95 真机反馈修复**（2026-11-21）。
-> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。
-> 验证：`tsc --noEmit` PASS；`vitest run` 216 例全绿（marks 45 例，含 D76/D77 新增 2 例回归；settings 补 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D95.exe`）。A83–A97 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。
+> 状态：**T1–T12 实施完成 + D76–D97 真机反馈修复与体验增强**（2026-11-21）。
+> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。
+> 验证：`tsc --noEmit` PASS；`vitest run` 221 例全绿（marks 50 例，含 D76/D77 回归 2 例与 D96 章节组织 5 例；settings 补 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D98.exe`）。A83–A97 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。
 > 取证通道：D87 起 EPUB 诊断自动节流落盘到 exe 同目录 `epub-diag.log`（`utils/epubDiag.ts` + Go `DiagLogPath()`/`WriteDiagLog()`），不再依赖点按钮；D76–D95 全部修复均据该日志定位。
 > 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互；**§4.11 面板形态已由 D95 改为弹窗浮层，HTML 基线此点未同步更新**）。
 > 上游版本：v0.2.9（PDF 显示优化，A67–A74 待真机）。本版以在三个 Viewer 内挂载划词监听与高亮渲染为主：TXT 渲染层按 D68 改片段数组，PDF 按 D73 退化为页级，Go 侧零改动。
@@ -116,7 +116,7 @@ markDefaultColor: MarkColor;
 2. 工具条浮于选区上方（空间不足时翻到下方）：4 个色点 + 「写感悟」+ 「复制」。色点 hover 显示色名（黄/绿/蓝/粉）。
 3. 点色点 → 即时落库 + 高亮上色 + toast「已标记」；工具条收回。
 4. 在已有高亮上再次选词（选区与已标记区间重叠）→ 工具条变为「改色 / 写感悟 / 删除标记」三态，删除需该条目的更多菜单确认（工具条内删除直接生效并 toast「已删除标记」，不二次确认——与单本 ✕ 同口径）。
-5. 点击正文中的高亮 → 弹出该条气泡：原文 1 行 + 感悟预览（≤ 2 行）+「编辑」「删除」。
+5. 点击正文中的高亮 → 弹出该条气泡：原文 1 行 + 感悟预览（≤ 2 行）+「编辑」「删除」。**D97 增补**：鼠标悬停高亮（有感悟的条目）稳定 320ms 即浮出只读感悟提示，移开收起；点击仍是完整气泡。
 6. 「复制」复制划选原文到剪贴板（复用现有 Ctrl+C 文案链路）。
 
 **写感悟编辑器（MarkNoteEditor）**
@@ -129,7 +129,7 @@ markDefaultColor: MarkColor;
 11. 入口：工具栏「标记」按钮（带数量徽标）、Ctrl+M；**340px 弹窗浮层**（D95：`.app-body` 内 `position:absolute`，配半透明遮罩，脱离 flex 流、不挤占正文宽度），遮罩点击 / Esc / 「×」关闭。
 12. 头部：标题「标记记录」+ 计数 N + 「＋ 写想法」+ 导出按钮 + 「×」。
 13. 工具行：搜索框（placeholder「搜索原文与感悟」）+ 筛选 chips：`全部 N` / `有感悟 N` / 四色各 N；搜索与筛选为「与」关系；无结果显示空态「无匹配标记」。
-14. 列表按**章节分组**（EPUB 取 `locator.chapter`；PDF「第 N 页」；TXT 统一「全文」），组头显示名称 + 组内计数；组内按 `updatedAt` 倒序。
+14. 列表按**章节分组**（EPUB 取 `locator.chapter`；PDF「第 N 页」；TXT 统一「全文」），组头显示名称 + 组内计数；组内按 `updatedAt` 倒序。**D96 增补**：EPUB 分组按目录树组织——按阅读顺序排列（父章在前、子节紧随），子节缩进并显示父章面包屑，当前阅读章加「当前章」标识；分组名与目录标签精确不匹配时退回平铺分组，不做模糊归类。
 15. 条目结构：色条 + 原文摘录（≤ 3 行省略；独立想法显示「◆ 想法」前缀）+ 感悟预览（≤ 2 行，斜体或引号样式）+ 相对时间（复用 `formatRelativeTime`）+ hover 出现「⋯」更多菜单（跳转 / 编辑 / 复制 / 删除）。
 16. 点条目正文区 → 跳转定位 + 目标高亮闪烁 1.6s（`.mark-flash` 动画）；跳转后面板保持打开（不抢焦点）。
 17. 底部信息行：「共 N 条 · 有感悟 M 条」；「清空本书…」入口，二次确认面板显示书名与条数（沿用 v0.2.8 ShelfManager 两层面板口径）。
@@ -233,6 +233,8 @@ markDefaultColor: MarkColor;
 | D93 | D92 z-index 无效，改试合成层 | 面板加 `transform:translateZ(0)`；加 `MARK_PANEL_RECT` 几何 + `elementFromPoint` 命中打点 | 第二次层叠尝试仍属推断；RECT 打点成为定案证据 |
 | D94/D95 | 面板被合成层遮挡（D92/D93 假设） | **定案：布局挤出**。日志 `MARK_PANEL_RECT x=1266 y=55 w=340 h=708 hit=none`，视口宽 1266 → 面板恰在右边界外；根因 `.content` flex item 默认 `min-width:auto` 被超宽 iframe 撑满。用户决策改**弹窗浮层**：`.app-body{position:relative}`、`.marks-panel{position:absolute;right/top/bottom:0}`、新增 `.marks-backdrop` 遮罩、保留 `.content{min-width:0}` 保险 | D92 z-index / D93 合成层两次层叠尝试均无效；**教训：渲染了但看不见，先量几何位置再判断是否层叠**。副作用消除：开关面板不再改正文宽度、不再触发 ResizeObserver/resize |
 | D95 状态 | 面板弹窗化后的真机视觉 | 已构建、提交、交付 `build/bin/book-editor-D95.exe`；**用户尚未确认最终视觉与关闭交互** | 如实记录待确认；D89 划词问题仍未验证 |
+| D96 | §4.14 分组口径「按章节分组、组内时间倒序」，分组顺序为首次出现顺序 | **按目录树组织**：`EpubViewer` 经 `tocNodesWithPath()` 回传 `{href,label,depth,order,labels}` 树路径（走 `onTocContext` → App `tocCtx` → 面板）；`marks.ts` 新增 `markChapterPaths()`（按 `locator.chapter` **精确匹配**目录标签反查路径，不模糊猜）与 `sortChapterGroups()`（按 order 字典序，父章→子节；无路径分组殿后）；面板分组加 `.mp-depth-0/1/2` 缩进、父章面包屑 `.gpath`、当前章 `.gcur` 标识 | 用户反馈「标记可以按章节显示吗」——原实现虽按 `locator.chapter` 分组，但**顺序是首次出现**、无层级、看不出归属（截图里两个分组平铺同字号）。标签不匹配时宁可不归类（错归档比不归类更误导）；切书/换格式时 App 清空 `tocCtx` 防串书 |
+| D97 | §4.5 仅「点击高亮 → 气泡」 | **新增悬停只读提示** `.mark-hovertip`：`bindStageMarks` 增 `mousemove`/`mouseleave` 命中，稳定停留 `HOVER_DELAY_MS=320ms` 才浮出；只对**有感悟**的条目标示（纯高亮无信息可显示）；鼠标移入提示矩形内时保持（`.mark-hovertip` 命中豁免，否则提示会在光标接近瞬间消失、永远点不进）；点击仍走完整气泡（`showBubble` 先 `cancelHover`）；新增 `HOVER_TIP` 打点 | 用户反馈「鼠标悬停标记点可以显示感悟吗」。分页模式 `markClicked` 不变；悬停提示 z-index 1001 低于气泡 1003，两者不叠 |
 
 **风险**
 - EPUB iframe 内选词的坐标换算已有先例（`bindStageInteraction` 的 `iframeContentPoint`），工具条定位复用该函数，不新造轮子。
@@ -259,6 +261,7 @@ markDefaultColor: MarkColor;
 | T9 | `App.tsx` 接线 + Ctrl+M + 书架联动清理 + `styles.css` | 真机 A91–A94 | ✅ a575152（代码；Ctrl+M 闭包陈旧 bug 自查修复见 D74） |
 | T10 | `smoke_marks.py` + 真机验收回填 | A83–A96 全过 + 本文 §6 状态回填 | 🔶 smoke_marks.py 9 步 + smoke_settings 坐标修正 + 本文回填完成；A83–A96 真机执行待真实环境跑批 |
 | T11 | D76–D95 真机反馈修复（EPUB 打开/空白/resize/目录/标记面板） | 据 `epub-diag.log` 逐版定位 + 用户真机确认 | 🔶 20 版修复已逐版构建提交（D78 仅观测项，未单独修复）；**已真机确认**：D88 翻页正文加载、D91 目录层级、D93→D95 面板布局挤出定案；**待确认**：D95 弹窗视觉/关闭交互、D89 翻页划词工具条（历次日志均无划词打点）；EPUB 高亮 annotations 真机终验（A95）未完成。**D94 未单独构建/提交**，其保险并入 D95 |
+| T12 | D96/D97 体验增强：标记按章节组织 + 悬停显示感悟 | tsc/vitest/go test/build 全过 + 真机视觉确认 | 🔶 代码完成并提交 `aaac6c7`，交付 `build/bin/book-editor-D98.exe`；`marks.test.ts` 45→50 例（D96 新增 5 例：路径反查/不猜/想法与 TXT 不归章/顺序/殿后），vitest 221 例全绿；**真机视觉与交互待用户确认**（章节缩进层次、面包屑、悬停 320ms 手感） |
 
 **DoD**：`tsc --noEmit` PASS ✅、`vitest run` 216 例全绿（marks 45 + settings 6）✅、`go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅（最新交付 `book-editor-D95.exe`）、本文 §6/§7/§8 回填至 D95 ✅、D95 弹窗用户确认 ⏳、D89 翻页划词真机验证 ⏳、A83–A97 其余真机通过 ⏳、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D95 ⏳（下一步，未在本版范围）。
 
