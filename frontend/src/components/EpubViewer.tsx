@@ -1785,6 +1785,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
     const target = tocTargetsRef.current.find((item) => item.index === index);
     const wm = windowRef.current;
+    epubDiag("JUMP", `idx=${index} secIdx=${target?.sectionIndex ?? "?"} href=${href}`);
     if (wm && target) {
       const manager = renditionRef.current?.manager;
       const view = manager?.views?.all?.().find((item) => item.section.index === target.sectionIndex);
@@ -1794,18 +1795,28 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         if (top !== null && stage) {
           stage.scrollTop += top - stage.getBoundingClientRect().top - 16;
           wm.scheduleSync();
+          epubDiag("JUMP_INWINDOW", `top=${Math.round(top)} st=${Math.round(stage.scrollTop)}`);
           return;
         }
         // 目标在当前窗口内但锚点暂不可访问时，至少滚到该 section 顶部。
         wm.scrollToSection(target.sectionIndex);
+        epubDiag("JUMP_INWINDOW_FALLBACK", `secIdx=${target.sectionIndex}`);
         return;
       }
     }
     // 目标 section 不在窗口内：让 epubjs 定位到目标锚点，再由窗口管理器
     // 按用户设置补齐前后章节并回收窗口外内容。
+    epubDiag("JUMP_DISPLAY", `href=${target?.href ?? href} (target not in window)`);
     void withTimeout(Promise.resolve(renditionRef.current?.display(target?.href ?? href)), OPEN_TIMEOUT_MS)
-      .then(() => windowRef.current?.sync())
-      .catch(() => undefined);
+      .then(() => {
+        epubDiag("JUMP_DISPLAY_OK", `href=${target?.href ?? href}`);
+        probeEpubDom(containerRef.current, renditionRef.current, "after-jump-display");
+        windowRef.current?.sync();
+      })
+      .catch((e) => {
+        epubDiag("JUMP_DISPLAY_FAIL", `err=${(e as { message?: string })?.message ?? String(e)}`);
+        probeEpubDom(containerRef.current, renditionRef.current, "after-jump-fail");
+      });
   };
 
   if (failed) {
@@ -1846,17 +1857,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     <section className="state state-epub active" aria-label="EPUB 显示" ref={sectionRef}>
       {toc.length > 0 && (
         <aside className="toc-sidebar">
-          <div className="toc-title">
-            目录
-            <button
-              type="button"
-              className="epub-live-diag-toggle"
-              title="查看 EPUB 渲染诊断"
-              onClick={() => setDiagOpen((v) => !v)}
-            >
-              {diagOpen ? "收起诊断" : "诊断"}
-            </button>
-          </div>
+          <div className="toc-title">目录</div>
           {toc.map((item, i) => (
             <button
               key={item.href + ":" + i}
@@ -1874,6 +1875,14 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         </aside>
       )}
       <div className="epub-content" ref={containerRef} />
+      <button
+        type="button"
+        className="epub-diag-fab"
+        title="查看 EPUB 渲染诊断日志"
+        onClick={() => setDiagOpen((v) => !v)}
+      >
+        {diagOpen ? "✕" : "诊断"}
+      </button>
       {diagOpen && (
         <div className="epub-live-diag-box">
           <pre>{getEpubDiagText() || "(无诊断记录)"}</pre>
