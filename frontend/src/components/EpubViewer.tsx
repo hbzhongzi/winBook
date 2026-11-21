@@ -298,17 +298,34 @@ function flattenToc(items: EpubNavItem[], output: EpubNavItem[] = [], depth = 0)
   return output;
 }
 
+/** 标题文本判定为「子级小节」的启发式（D90/D91） */
+function isSubItemLabel(label: string): boolean {
+  const s = label.trim();
+  if (/^(如何|本章小结|小结|总结|练习|案例)/.test(s)) return true;
+  if (/^(part|section|appendix)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(s)) return true;
+  // "The Adventure of ..." 是明确的单篇故事名，即使落在分页边界（无锚点）也应降级
+  if (/^the adventure of (the )?/i.test(s)) return true;
+  return false;
+}
+
+/**
+ * D91：EPUB nav 层级推断。样本 toc.ncx 是平铺的（76 项全在同一层，无嵌套），
+ * epubjs 拿不到 depth，只能靠客观结构推断：
+ *  - EPUB 自带 depth > 0 → 尊重原始层级；
+ *  - 命中分部关键词（Part I / 小结 等）→ 子项；
+ *  - 带 #锚点的目录项指向物理文件内某一节 → 子项；无锚点的文件首项 → 父项。
+ * 个别项可能与原书逻辑不完全一致（如恰好在分页边界的故事），但整体可辨大小标题。
+ */
+function inferTocDepths(items: EpubNavItem[]): EpubNavItem[] {
+  return items.map((it) => {
+    if ((it.depth ?? 0) > 0) return it;
+    if (isSubItemLabel(it.label) || it.href.includes("#")) return { ...it, depth: 1 };
+    return it;
+  });
+}
+
 function tocDepth(item: EpubNavItem): number {
-  if ((item.depth ?? 0) > 0) return item.depth ?? 0;
-  const label = item.label.trim();
-  // 中文辅助性小节（既有口径）
-  if (/^(如何|本章小结|小结|总结|练习|案例)/.test(label)) return 1;
-  // D90：英文分部标题降级为子项。中文 EPUB 的「Part 1/Part I」若出自 nav 平铺
-  // （无 subitems），旧规则只认中文关键词，会把分部标题和故事主标题判成同一档，
-  // 目录里 76 项全是 13px 粗体，看不出大小标题。本样本 A Study in Scarlet 下的
-  // "Part 1"/"Part 2" 即属此类，识别后套 toc-depth-1（缩进/小字/次要色）。
-  if (/^(part|section|appendix)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(label)) return 1;
-  return 0;
+  return item.depth ?? 0;
 }
 
 /**
@@ -1216,7 +1233,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         const nav = await withTimeout(book.loaded.navigation, OPEN_TIMEOUT_MS);
         epubDiag("NAV_LOADED", `toc=${nav.toc?.length ?? 0}`);
         if (destroyed) return;
-        const items = flattenToc(nav.toc ?? []);
+        const items = inferTocDepths(flattenToc(nav.toc ?? []));
         setToc(items);
 
         // 每个目录项都保留自己的 section + fragment。
