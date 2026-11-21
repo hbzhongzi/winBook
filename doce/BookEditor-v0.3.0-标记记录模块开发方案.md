@@ -1,8 +1,10 @@
 # BookEditor v0.3.0 —— 标记记录模块 开发方案
 
-> 状态：**T1–T10 实施完成**（2026-11-21；T1–T9 提交 2ad7218–a575152，T10 见当次提交）。
-> 验证：`tsc --noEmit` PASS；`vitest run` 214 例全绿（marks 43 例 + settings 补 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（build/bin/book-editor.exe 已刷新）。A83–A96 真机 GUI 断言待真机执行（本环境无 GUI；`e2e/smoke_marks.py` 9 步已就绪，语法校验通过）。
-> 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互，交互口径即本文 §4 口径）。
+> 状态：**T1–T10 实施完成 + D76–D95 真机反馈修复**（2026-11-21）。
+> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。
+> 验证：`tsc --noEmit` PASS；`vitest run` 216 例全绿（marks 45 例，含 D76/D77 新增 2 例回归；settings 补 6 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D95.exe`）。A83–A97 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。
+> 取证通道：D87 起 EPUB 诊断自动节流落盘到 exe 同目录 `epub-diag.log`（`utils/epubDiag.ts` + Go `DiagLogPath()`/`WriteDiagLog()`），不再依赖点按钮；D76–D95 全部修复均据该日志定位。
+> 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互；**§4.11 面板形态已由 D95 改为弹窗浮层，HTML 基线此点未同步更新**）。
 > 上游版本：v0.2.9（PDF 显示优化，A67–A74 待真机）。本版以在三个 Viewer 内挂载划词监听与高亮渲染为主：TXT 渲染层按 D68 改片段数组，PDF 按 D73 退化为页级，Go 侧零改动。
 > 需求来源：用户 2026-11-21 要求 —— ① 阅读中可对正文做标记（划词高亮）；② 可记录阅读感悟（笔记）；③ 标记与感悟可按书管理、跳转回原文、可导出。
 
@@ -15,7 +17,7 @@
 | **F31** | 划词高亮 | 选中正文 ≥ 8 字符时弹出**标记工具条**（4 色圆点 + 写感悟 + 复制），点色点即落库高亮 |
 | **F32** | 阅读感悟 | 高亮可附带笔记；「写感悟」编辑器引用原文（≤ 3 行）+ 多行输入；纯高亮（无笔记）合法 |
 | **F33** | 独立想法 | 面板「＋ 写想法」不依赖选区，以当前阅读位置记录一段自由笔记 |
-| **F34** | 标记列表面板 | 右侧抽屉（默认 340px）：按章节分组、组内时间倒序；条目含色条、原文摘录、感悟预览、相对时间 |
+| **F34** | 标记列表面板 | 340px 弹窗浮层（D95，原方案为右侧抽屉）：按章节分组、组内时间倒序；条目含色条、原文摘录、感悟预览、相对时间 |
 | **F35** | 跳转定位 | 点列表条目跳回原文：EPUB `display(cfi)` / TXT 字符偏移定位 / PDF 页码定位；目标高亮闪烁 1.6s |
 | **F36** | 筛选与搜索 | 面板内关键词搜索（原文 + 感悟）+ 筛选 chips（全部 / 有感悟 / 四色） |
 | **F37** | 导出 | 按书导出 Markdown（书名 → 章节 → 原文/感悟/位置），支持复制到剪贴板与下载 `.md` |
@@ -36,6 +38,7 @@
 | 快捷键 | `readerHotkeys.ts` 动作映射 + `dispatchReaderCommand`；Ctrl+O 已有前端拦截先例 | 新增全局 `Ctrl+M` 开关面板，与 Ctrl+O 同一拦截层 |
 | 删除记录 | `removeEntry` / `removeEntries` / `clearLibrary`（library.ts） | App 层 handler 串联清理 marks，避免 utils 间循环依赖 |
 | 退出 flush | Go `OnBeforeClose` → `app:flush-request` → 前端 `flushCurrent` → `app:flush-done` | **marks 不纳入 flush**：每次标记操作即时写盘（见 D69） |
+| EPUB 诊断（实施期新增） | `utils/epubDiag.ts`（D79）环形缓冲 200 条；Go `DiagLogPath()`/`WriteDiagLog()`（D87）写 exe 同目录 `epub-diag.log` | 400ms 节流落盘，生产构建无需点按钮取证；D76–D95 全部修复均据该日志定位 |
 
 ---
 
@@ -98,9 +101,9 @@ markDefaultColor: MarkColor;
 - 关闭后：划词不弹工具条、Ctrl+M 无面板、正文已有高亮**照常显示**（关闭只影响新增，与「删除需显式操作」一致）。
 - `markDefaultColor` 为 T5 实施期新增（HTML 基线「默认高亮颜色」设置项）：工具条色点初始选中、PDF「标记本页」按钮、「＋ 写想法」均以它作为初始色。
 
-### 3.4 不变项
+### 3.4 不变项与实施期变更
 
-- **Go 侧零改动**：`app.go` / `main.go` / `SupportedExts` 不受影响，无新增绑定。
+- **Go 侧无业务改动，但 D87 新增两个只读诊断绑定**：`app.go` / `main.go` / `SupportedExts` 的图书读取逻辑不变；仅新增 `DiagLogPath()` 与 `WriteDiagLog(text)` 用于写 `epub-diag.log`（`wailsjs/go/main/App.js` / `App.d.ts` 同步补签名）。方案阶段「无新增绑定」的口径被取证需求打破，如实记录（见 D87）。
 - `library.ts` 数据结构不变（不加 `marks` 字段，见 §2 理由）。
 - 退出 flush 链路（`flushCurrent`）不纳入 marks（D69）。
 
@@ -123,7 +126,7 @@ markDefaultColor: MarkColor;
 10. 「＋ 写想法」：入口在面板头部；不依赖选区，`text` 为空、`idea: true`，定位取当前阅读位置（无位置时仍可保存，`locator` 记当前页/章节）。
 
 **标记记录面板（MarksPanel）**
-11. 入口：工具栏「标记」按钮（带数量徽标）、Ctrl+M；右侧抽屉 340px，遮罩点击 / Esc / 「×」关闭。
+11. 入口：工具栏「标记」按钮（带数量徽标）、Ctrl+M；**340px 弹窗浮层**（D95：`.app-body` 内 `position:absolute`，配半透明遮罩，脱离 flex 流、不挤占正文宽度），遮罩点击 / Esc / 「×」关闭。
 12. 头部：标题「标记记录」+ 计数 N + 「＋ 写想法」+ 导出按钮 + 「×」。
 13. 工具行：搜索框（placeholder「搜索原文与感悟」）+ 筛选 chips：`全部 N` / `有感悟 N` / 四色各 N；搜索与筛选为「与」关系；无结果显示空态「无匹配标记」。
 14. 列表按**章节分组**（EPUB 取 `locator.chapter`；PDF「第 N 页」；TXT 统一「全文」），组头显示名称 + 组内计数；组内按 `updatedAt` 倒序。
@@ -154,18 +157,22 @@ markDefaultColor: MarkColor;
 | `frontend/src/components/MarkNoteEditor.tsx` | **新增**：感悟编辑器（引用块 + 文本域 + 改色 + 保存/取消），新建与编辑复用 |
 | `frontend/src/components/MarksPanel.tsx` | **新增**：抽屉（头部/工具行/分组列表/条目/更多菜单/底部行/空态）+ 清空二次确认 + 导出弹层 |
 | `frontend/src/components/TextViewer.tsx` | 渲染层按 marks 偏移拆 `<mark>` 片段；划词监听（mouseup + 偏移计算）；跳转 `scrollIntoView` + flash |
-| `frontend/src/components/EpubViewer.tsx` | 宿主 `stage` mouseup 监听（遍历 iframe contentDocument 取选词，工具条/气泡在宿主 DOM）+ annotations 增量同步（未渲染章节经 `hooks.render.inject` 补挂）；`display(cfi)` 跳转 + 高亮闪烁（两级延迟重试等补挂） |
+| `frontend/src/components/EpubViewer.tsx` | 宿主 `stage` mouseup 监听（遍历 iframe contentDocument 取选词，工具条/气泡在宿主 DOM）+ annotations 增量同步（未渲染章节经 `hooks.render.inject` 补挂）；`display(cfi)` 跳转 + 高亮闪烁（两级延迟重试等补挂）。**实施期 D76–D95 大改**：诊断打点、首次 display 前 patch continuous `fill/check`（D80）、DOM 探针 + 空白自愈（D81）、浮动诊断按钮（D82）、resize 基线/恢复（D83）、虚假膨胀过滤 + jump guard（D84）、空壳扉页判定（D85/D86）、像素 resize（D88）、交互打点（D89/D90）、平铺目录层级推断（D90/D91），详见 §7 |
 | `frontend/src/components/PdfViewer.tsx` | **D73 页级**：「标记本页」悬浮按钮（无控制条时显形，当前页已有标记时 active）+ 页码定位器；跳转 = 单页翻页 / 滚动模式页槽置顶（复用初始恢复重钉机制）+ 页级闪烁 1.6s |
 | `frontend/src/components/BookViewer.tsx` | 透传 marks 相关 props 与三个 Viewer 的标记上下文；书架入口不变 |
 | `frontend/src/components/SettingsPanel.tsx` | 新增「标记记录」分组：总开关 + 默认色选择（4 色）+ 说明文案 |
-| `frontend/src/App.tsx` | `marks` state + 订阅；`showMarks` state；Ctrl+M 拦截（仿 Ctrl+O）；flush 不变；书架移除 handler 串联 marks 清理；渲染 `<MarksPanel>` |
+| `frontend/src/App.tsx` | `marks` state + 订阅；`showMarks` state；Ctrl+M 拦截（仿 Ctrl+O，D74 mirror-ref 门控）；flush 不变；书架移除 handler 串联 marks 清理；渲染 `<MarksPanel>`。**D92 加 `MARK_PANEL_TOGGLE` 打点；D95 改为弹窗浮层（`.marks-backdrop` 遮罩点击关闭 + MarksPanel）** |
 | `frontend/src/utils/readerCommands.ts` / `readerHotkeys.ts` | **未改动**：Ctrl+M 走 `App.tsx` 窗口级拦截（仿 Ctrl+O，D74），不经阅读器命令层；可选单键 `m` 未做 |
-| `frontend/src/styles.css` | `.mark-hl`（四色变体 + `.mark-flash` 动画）、`.mark-toolbar`、`.mark-note-editor`、`.marks-panel`、`.mark-item`、`.mark-export-modal` 等 |
+| `frontend/src/styles.css` | `.mark-hl`（四色变体 + `.mark-flash` 动画）、`.mark-toolbar`、`.mark-note-editor`、`.marks-panel`、`.mark-item`、`.mark-export-modal` 等。**实施期追加**：失败页诊断区（D79）、浮动诊断按钮 z-index 1001（D82/D87）、目录层级 `.toc-depth-0/1`（D90/D91）、`.content{min-width:0}`（D94/D95）、`.marks-backdrop` + `.marks-panel` absolute 弹窗浮层 + 滑入动画（D95） |
+| `frontend/src/utils/epubDiag.ts` | **D79 新增**：`epubDiag(code,detail)` / `getEpubDiagText(limit)` / `clearEpubDiag()`，localStorage 键 `bookeditor.epub.diag.v1` 环形缓冲 200 条；**D87 增** `scheduleDiskFlush()`（400ms 节流）调用 Go 绑定写 `epub-diag.log` |
+| `frontend/src/utils/chapterWindow.ts` | 滚动模式自定义章节窗口管理器；D80 首次 display 前把 continuous `fill/check` patch 为 no-op + 委托 `wmRef.scheduleSync()`；`appendAndDisplay()`/`prependAndDisplay()` 显式 `view.show()` |
+| `app.go` / `wailsjs/go/main/App.js` / `App.d.ts` | **D87 新增** `DiagLogPath()` / `WriteDiagLog(text)` 绑定与前端签名（仅诊断落盘，无业务逻辑；见 §3.4） |
+| `frontend/src/components/MarksPanel.tsx` | **D92/D93 新增**挂载/卸载打点 + `requestAnimationFrame` 几何命中打点 `MARK_PANEL_RECT`（x/y/w/h/visibility/zIndex/hit），成为 D94 布局挤出定案的决定性证据 |
 | `e2e/` | 新增 `smoke_marks.py`（TXT 全流程 9 步：复位 → 划词落库 → Ctrl+M 面板 → 写想法 → 跳转闪烁 → 删除 → 开关幂等 → 总开关 → 书架联动 A91）；A91 联动断言随造标记同流程落在 smoke_marks（原计划放 smoke_shelf，但其移除对象 12.epub 无标记，见 D75）；`smoke_settings.py` nav 坐标随「标记记录」窗格插入修正 |
 
 ---
 
-## 6. 验收映射（建议 A83–A96）
+## 6. 验收映射（建议 A83–A97）
 
 | 编号 | 项 | 验证方式 | 状态 |
 |---|---|---|---|
@@ -181,12 +188,13 @@ markDefaultColor: MarkColor;
 | A92 | 设置关闭「标记记录」→ 划词无工具条；已有高亮仍显示；重开恢复 | 手动真机 | 🟡 自动化 sm-marks-08（关闭→无色点→重开恢复）；「已有高亮仍显示」待真机 |
 | A93 | Ctrl+M 开/关面板；设置面板打开时 Ctrl+M 归面板 | 手动真机 | 🟡 自动化 sm-marks-03/07（Ctrl+M 开+Esc 关+再开）；「键归面板」待真机 |
 | A94 | 单本 500 条上限：连续划词至上限，最旧被淘汰且无卡死 | 手动真机（可脚本灌数） | 🟡 单测覆盖淘汰逻辑（marks.test.ts）；连续划词真机待验 |
-| A95 | EPUB 高亮经 annotations 渲染，翻页/切章后高亮仍在；scroll 模式正常 | 手动真机 | ⏳ 代码完成（D67 结论）；真机终验待执行 |
+| A95 | EPUB 高亮经 annotations 渲染，翻页/切章后高亮仍在；scroll 模式正常 | 手动真机 | 🟡 部分真机确认：D88 翻页正文加载（日志 `len=113151` 持续保持）、D91 目录层级用户已确认；**高亮 annotations 真机翻页/切章后仍在那一项未终验** |
 | A96 | PDF 页级标记：按钮落库/active 态；滚动出页再回来；跨页选词降级为侧栏条目 | 手动真机 | ⏳ 代码完成（D73 页级口径）；真机终验待执行 |
+| A97 | EPUB 翻页模式划词 → 工具条弹出 → 点颜色/写感悟落库（D89） | 手动真机 + `epub-diag.log` 打点 | ⏳ **未验证**：D89 提升 `.mark-toolbar` z-index 并加 `SELECTED_EVENT`/`TOOLBAR_SHOW`/`TOOLBAR_ACTION` 打点，但用户历次回传日志均无划词链路打点；需完成一次「翻页划词 → 点颜色」并回传新日志方可定案 |
 
 **自动化覆盖（实施后回填）**
-- 单测：`marks.test.ts` 43 例（normalize / 批量广播 / 淘汰 / 导出结构）；`settings.test.ts` 补 `markEnabled` 缺省迁移 + `markDefaultColor` 白名单共 6 例；`vitest run` 合计 214 例全绿。
-- e2e：`smoke_marks.py` 9 步（sm-marks-00–09），覆盖 A83（TXT）/ A85 / A86（部分）/ A87（TXT）/ A91 / A92 / A93（口径见上表）；A84 / A88 / A89 / A90 / A94（真机部分）/ A95 / A96 待真机。运行前需 `wails build` 刷新 `build/bin/book-editor.exe`（T10 已构建）。
+- 单测：`marks.test.ts` 45 例（normalize / 批量广播 / 淘汰 / 导出结构；D77 新增 2 例 EPUB 独立想法空 cfi 回归）；`settings.test.ts` 补 `markEnabled` 缺省迁移 + `markDefaultColor` 白名单共 6 例；`vitest run` 合计 216 例全绿。
+- e2e：`smoke_marks.py` 9 步（sm-marks-00–09），覆盖 A83（TXT）/ A85 / A86（部分）/ A87（TXT）/ A91 / A92 / A93（口径见上表）；A84 / A88 / A89 / A90 / A94（真机部分）/ A95 / A96 / A97 待真机。运行前需 `wails build` 刷新 exe（T10 时构建 `book-editor.exe`，D95 最新交付为 `book-editor-D95.exe`）。
 
 ---
 
@@ -205,11 +213,34 @@ markDefaultColor: MarkColor;
 | D73 | PDF 与 EPUB 同精度 quote 高亮（D65 原口径） | **页级退化**：PdfViewer 纯 canvas 渲染（无 pdfjs textLayer，方案 §2 现状描述有误，已修正），页内 quote 重匹配本版不做；「标记本页」悬浮按钮落 `{page, quote:""}`，面板按「第 N 页」分组；跳转 = 翻页/页槽置顶 + 页级闪烁 1.6s | textLayer 缺失是渲染架构事实（非实现疏漏）；in-text 高亮列后续候选；跨页/扫描版同样只落页级条目 |
 | D74 | Ctrl+M 走 readerCommands 命令层（§5 计划行） | **App.tsx 窗口级拦截**（仿 Ctrl+O 先例）：`noteEditMirrorRef` / `showShelfManagerRef` mirror-ref 门控，避免 effect 单次注册的闭包陈旧——实施期自查发现「编辑器/书架管理打开时 Ctrl+M 穿透切换面板」并修复 | readerHotkeys 是阅读器内键位体系（焦点需在阅读区）；窗口级拦截才能满足 §4.22「设置面板打开时键归面板」；可选单键 `m` 未做 |
 | D75 | A91 联动断言放 smoke_shelf.py（§5 计划行） | 落 **smoke_marks.py 步骤 9**：smoke_shelf 的移除对象 12.epub 无标记，补断言需先造标记；smoke_marks 与造标记同流程，且 TXT 绿封面可去坐标化定位（列密度+行跨度结构判据滤徽标） | 副作用：步骤 9 整类移除书架全部 TXT 卡（无法按书名区分），冒烟环境可接受（smoke_shelf 起始即清空书架） |
+| D76 | `displayError` 一律判整本解析失败 | 新增 `failOnDisplayError` 标志，两处 `applyResume()` 调用前置 false / 后置 true，只让首章加载阶段的 displayError 判失败 | 旧 CFI/href 恢复失败本可降级，原逻辑误判为整本 EPUB 损坏 → 白屏 |
+| D77 | 独立想法 EPUB 无 cfi 也能存 | `normalizeMark` 对 `idea=true` 且 epub 空 cfi 补占位 `epubcfi(/)`；划词标记空 cfi 仍拒绝 | 原 `normalizeLocator` 整条丢弃，写想法保存后立刻从面板消失（0 条）；新增 2 例回归测试 |
+| D78 | display() 在无 GUI 下挂起 | 仅 jsdom 观测，未在 WebView2 确认 | 如实记录：jsdom 无真实 iframe 渲染，挂起属环境限制，不作产品结论 |
+| D79 | Wails 生产构建无可见日志 | 新增 `utils/epubDiag.ts`（localStorage 环形缓冲 200 条）+ 失败页「查看诊断日志」按钮/复制 | 用户拿不到 FAIL 触发点，无法据日志定位；后续 D80–D95 全部依赖此通道 |
+| D80 | 首次 display 前未接管 continuous 补章 | 首次 display 前 patch `fill=Promise.resolve()`、`check=()=>{wmRef?.scheduleSync();return Promise.resolve(false)}`（打点 `PATCH_FILL_CHECK`）；page 模式不 patch | `display()` Promise 既不 resolve 也不 reject，10s 超时；根因 continuous manager 递归 `fill/check` 卡住（本书首章在 spine index 12） |
+| D81 | applyResume 二次 display 清正文后无补救 | applyResume 后 `settleAndCheck` 复检，确认空白则重新 `display(startTarget)` 捞回；新增 `probeEpubDom` 探针 | 日志证实 display 成功后 views 被清空致纯白；D80 修好首次后该问题才暴露 |
+| D82 | 诊断按钮放在目录标题内，滚动后滚出视口点不到 | 改右下角固定浮动按钮 `.epub-diag-fab`；`jump()` 加 `JUMP_*` 打点 + after-jump DOM 探针 | 连续多版未根治，先修取证 UX 并补探针，不盲改渲染逻辑 |
+| D83 | 假设 resize 尺寸未变会提前返回 | **推翻该假设**：epubjs `DefaultViewManager.resize()` 无条件 `clear()`；`onResized()` 靠 `location.start.cfi` 自愈，首章刚 display 时 location 未就绪 | ResizeObserver 首次回调 / window resize 清空 views 后无恢复路径，两模式都空白；修为 RO 基线 + `resizeWithRecovery()` 复检重显 |
+| D84 | ResizeObserver 观察 container 即可 | 三层防护：忽略 `w > innerWidth+200` 虚假膨胀且不污染 baseline；忽略高度 <40px 抖动；`jumpResizeGuardRef` jump 后 1.2s 禁 resize | 跳章时 paginated iframe 宽度瞬时撑到 43764px，RO 误判容器变宽，两次 clear 后回首章空壳 |
+| D85 | settle 判据 `text.length>0` 即有正文 | 翻页模式首章 strict settle 后读文本长度，`0<=len<80` 判空壳扉页，强制 `state=false` 走跳章循环 | 本书首章是书名扉页（len=25）被误判有正文；滚动模式有窗口管理器补齐相邻章节故不受影响 |
+| D85补/D86 | D85 空壳判定被抵消 + resume 二次 display | ① 提取 `shellCoverCheck()`，strict / loose / 跳章循环三处复检统一应用；② 打开流程内跳章前设 `jumpResizeGuardRef=now+1500`；③ 恢复位置指向空壳扉页时跳过 applyResume（`RESUME_SKIP_SHELL`） | D85 的 state=false 被 loose 复检重新判回 true；日志 `RESUME href=split_011` 正指向扉页，跳章后又被 display 拉回——即用户所见「一瞬间后消失」 |
+| D87 | 诊断按钮 z-index 31 被 loading-overlay 900 覆盖 | Go 新增 `DiagLogPath()`/`WriteDiagLog()`；`epubDiag.ts` 加 400ms 节流自动落盘；按钮/日志面板 z-index → 1001 | 按钮显示一下就消失、点不到；建立不依赖点击的落盘日志通道 |
+| D88 | `rendition.resize("100%","100%")` | 改像素尺寸：新增 `resizeRenditionToContainer()`，用 `getBoundingClientRect()` 实测 floor 像素传给 resize；类型签名放宽为 `string\|number` | 日志证实宽度按数量级暴涨（39596→435556→6176976→22369398px）：`stage.size()` 写 `style.width="100%"`，在 overflow:hidden + 超宽 iframe 下形成正反馈。**用户日志已确认修复成功**（`len=113151` 持续保持） |
+| D89 | 翻页划词工具条按钮点击无效 | `.mark-toolbar` z-index 40→1002、`.mark-bubble` 41→1003；加 `SELECTED_EVENT`/`TOOLBAR_SHOW`/`TOOLBAR_ACTION`/`MARK_DISMISS` 打点 | 滚动正常、仅翻页异常；推断 iframe `translateZ(0)` 合成层拦截点击（**推断，未实证**）；用户历次日志均无划词打点，**修复仍未验证，不得宣称已修好** |
+| D90 | 目录层级只识别中文小节 | `tocDepth()` 扩英文 `part/section/appendix` 规则；`selected` 回调加 `SELECTED_EVENT` 打点 | 样本 Part 1/2 能降级，但用户反馈「目录只修复了一部分」 |
+| D91 | D90 只修一部分 | 解析样本 `toc.ncx`：**源文件 76 项全平铺、无嵌套**，epubjs depth 恒 0；新增 `isSubItemLabel()`+`inferTocDepths()`，按 自带 depth→标题模式→href `#` 锚点→无锚点首项 推断（本地模拟 76→23 父/53 子） | 原书层级信息缺失，无法 100% 还原；个别落分页边界且无锚点的故事仍判父项；**用户已确认「目录结构好了」** |
+| D92 | 标记面板点击不显示（首次归因层叠） | `.marks-panel` 加 `position:relative; z-index:1004`；加 `MARK_PANEL_TOGGLE`/`MOUNT`/`UNMOUNT` 打点 | 日志证实 toggle/mount 都正常，面板确实渲染；单纯 z-index 无效（**该推断被证伪**） |
+| D93 | D92 z-index 无效，改试合成层 | 面板加 `transform:translateZ(0)`；加 `MARK_PANEL_RECT` 几何 + `elementFromPoint` 命中打点 | 第二次层叠尝试仍属推断；RECT 打点成为定案证据 |
+| D94/D95 | 面板被合成层遮挡（D92/D93 假设） | **定案：布局挤出**。日志 `MARK_PANEL_RECT x=1266 y=55 w=340 h=708 hit=none`，视口宽 1266 → 面板恰在右边界外；根因 `.content` flex item 默认 `min-width:auto` 被超宽 iframe 撑满。用户决策改**弹窗浮层**：`.app-body{position:relative}`、`.marks-panel{position:absolute;right/top/bottom:0}`、新增 `.marks-backdrop` 遮罩、保留 `.content{min-width:0}` 保险 | D92 z-index / D93 合成层两次层叠尝试均无效；**教训：渲染了但看不见，先量几何位置再判断是否层叠**。副作用消除：开关面板不再改正文宽度、不再触发 ResizeObserver/resize |
+| D95 状态 | 面板弹窗化后的真机视觉 | 已构建、提交、交付 `build/bin/book-editor-D95.exe`；**用户尚未确认最终视觉与关闭交互** | 如实记录待确认；D89 划词问题仍未验证 |
 
 **风险**
 - EPUB iframe 内选词的坐标换算已有先例（`bindStageInteraction` 的 `iframeContentPoint`），工具条定位复用该函数，不新造轮子。
-- marks 面板与设置面板可同显（从设置打开时）：层级高于设置面板，Esc 分层关（沿用 v0.2.8 先例）。
+- marks 面板与设置面板可同显（从设置打开时）：层级高于设置面板，Esc 分层关（沿用 v0.2.8 先例）。**D95 改弹窗浮层后，与设置面板同显时的遮罩/层级关系待真机确认。**
 - 导出大量标记时 Markdown 字符串拼接在渲染线程同步执行（2000 条 ≈ 数毫秒），可接受；不引入 Web Worker。
+- EPUB 翻页模式 epubjs iframe 带 `translateZ(0)` 合成层，跳章瞬间宽度可达数万像素（实测 43764px）；**任何关于层叠/宽度的推断都必须先由 `epub-diag.log` 的几何打点实证**（D84/D88/D93 三次教训）。
+- `rendition.resize()` 严禁传百分比字符串（D88 会引发宽度指数暴涨）；参数必须是由 `getBoundingClientRect()` 实测的 floor 像素。
+- 平铺 `toc.ncx` 无真实层级信息，D91 只能启发式推断；个别落在分页边界且无锚点的故事仍被判为父项，属已知残留，非实现缺陷。
 
 ---
 
@@ -226,9 +257,10 @@ markDefaultColor: MarkColor;
 | T7 | `EpubViewer.tsx` annotations 高亮 + CFI 跳转 | 真机 A95（D67 验证点） | ✅ 1163867（代码；D67 结论已回填，真机终验待执行） |
 | T8 | `PdfViewer.tsx` 页级标记与页码跳转（D73） | 真机 A96 | ✅ a9c80a6（代码；真机终验待执行） |
 | T9 | `App.tsx` 接线 + Ctrl+M + 书架联动清理 + `styles.css` | 真机 A91–A94 | ✅ a575152（代码；Ctrl+M 闭包陈旧 bug 自查修复见 D74） |
-| T10 | `smoke_marks.py` + 真机验收回填 | A83–A96 全过 + 本文 §6 状态回填 | 🔶 本次提交：smoke_marks.py 9 步 + smoke_settings 坐标修正 + 本文回填完成；**A83–A96 真机执行待真实环境跑批**（exe 已刷新） |
+| T10 | `smoke_marks.py` + 真机验收回填 | A83–A96 全过 + 本文 §6 状态回填 | 🔶 smoke_marks.py 9 步 + smoke_settings 坐标修正 + 本文回填完成；A83–A96 真机执行待真实环境跑批 |
+| T11 | D76–D95 真机反馈修复（EPUB 打开/空白/resize/目录/标记面板） | 据 `epub-diag.log` 逐版定位 + 用户真机确认 | 🔶 20 版修复已逐版构建提交（D78 仅观测项，未单独修复）；**已真机确认**：D88 翻页正文加载、D91 目录层级、D93→D95 面板布局挤出定案；**待确认**：D95 弹窗视觉/关闭交互、D89 翻页划词工具条（历次日志均无划词打点）；EPUB 高亮 annotations 真机终验（A95）未完成。**D94 未单独构建/提交**，其保险并入 D95 |
 
-**DoD**：`tsc --noEmit` PASS ✅、`vitest run` 214 例全绿（marks 43 + settings 6）✅、`go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅、A83–A96 真机通过 ⏳（脚本就绪，待真机）、本文 §6/§7 状态回填 ✅、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D75 ⏳（下一步，未在本版范围）。
+**DoD**：`tsc --noEmit` PASS ✅、`vitest run` 216 例全绿（marks 45 + settings 6）✅、`go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅（最新交付 `book-editor-D95.exe`）、本文 §6/§7/§8 回填至 D95 ✅、D95 弹窗用户确认 ⏳、D89 翻页划词真机验证 ⏳、A83–A97 其余真机通过 ⏳、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D95 ⏳（下一步，未在本版范围）。
 
 ---
 
