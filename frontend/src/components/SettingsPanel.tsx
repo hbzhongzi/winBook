@@ -36,6 +36,12 @@ import {
   type HotkeyAction,
 } from "../utils/readerHotkeys";
 import { subscribeLibrary, type LibraryEntry } from "../utils/library";
+import {
+  MARK_COLORS,
+  MARK_COLOR_LABELS,
+  subscribeMarks,
+  type MarkColor,
+} from "../utils/marks";
 
 type Props = {
   settings: Settings;
@@ -48,7 +54,7 @@ type Props = {
   onClose: () => void;
 };
 
-type Pane = "reading" | "appearance" | "hotkeys" | "advanced";
+type Pane = "reading" | "appearance" | "marks" | "hotkeys" | "advanced";
 
 const THEME_CARDS: { value: ThemeName; name: string; mini: string }[] = [
   { value: "light", name: "浅色", mini: "mini-light" },
@@ -122,6 +128,15 @@ const NAV_ITEMS: { pane: Pane; label: string; icon: ReactNode }[] = [
     ),
   },
   {
+    pane: "marks",
+    label: "标记记录",
+    icon: (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+      </svg>
+    ),
+  },
+  {
     pane: "hotkeys",
     label: "快捷键",
     icon: (
@@ -150,6 +165,8 @@ export default function SettingsPanel({ settings, onOpenManager, onChange, onClo
   const [savedFlash, setSavedFlash] = useState(false);
   // 书架：面板内自订阅（落地文档 5.9，避免 prop 层层传递）
   const [shelfCount, setShelfCount] = useState(0);
+  // v0.3.0：标记总数（面板内自订阅，与书架同口径）
+  const [markTotal, setMarkTotal] = useState(0);
   // 快捷键录制（v0.2.5 F24）：非 null 时正在为某动作捕获按键
   const [recording, setRecording] = useState<HotkeyAction | null>(null);
   const [hkConflict, setHkConflict] = useState<string | null>(null);
@@ -163,6 +180,8 @@ export default function SettingsPanel({ settings, onOpenManager, onChange, onClo
   }, []);
 
   useEffect(() => subscribeLibrary((entries: LibraryEntry[]) => setShelfCount(entries.length)), []);
+  // v0.3.0：标记条数自订阅（增删改后即时刷新，无需重开面板）
+  useEffect(() => subscribeMarks((all) => setMarkTotal(all.length)), []);
 
   // 与全局设置保持同步：工具栏即时切换 / 其他实例改动后，面板草稿跟随更新
   useEffect(() => setDraft(settings), [settings]);
@@ -593,6 +612,70 @@ export default function SettingsPanel({ settings, onOpenManager, onChange, onClo
                   </div>
                   <p className="set-note">作用于 EPUB / TXT 正文两侧；PDF 不受影响。</p>
                 </div>
+              </section>
+            )}
+
+            {/* ===== 标记记录（v0.3.0 F31/F38） ===== */}
+            {pane === "marks" && (
+              <section className="settings-pane active" aria-label="标记记录">
+                <h3 className="pane-title">标记</h3>
+                <div className="set-card">
+                  <div className="set-card-head">
+                    <div>
+                      <h3>标记记录</h3>
+                      <p className="set-desc">
+                        选中正文即可高亮标记、随手记录感悟；PDF 为页级标记（标记当前页）。关闭后不再弹出划词工具条，已有标记与高亮仍正常显示。
+                      </p>
+                    </div>
+                    <label className="switch">
+                      <input
+                        type="checkbox"
+                        checked={draft.markEnabled}
+                        onChange={(e) => patch({ markEnabled: e.target.checked })}
+                      />
+                      <span className="switch-slider" />
+                    </label>
+                  </div>
+                  <p className="set-note">
+                    随时可用 Ctrl+M 或工具栏「标记」按钮打开 / 关闭标记面板（阅读中生效，无需重开图书）。
+                  </p>
+                </div>
+                <div className="set-card">
+                  <div className="set-card-head">
+                    <div>
+                      <h3>新标记默认色</h3>
+                      <p className="set-desc">「写感悟 / 写想法」的初始颜色；在编辑器与工具条中可随时改色。</p>
+                    </div>
+                  </div>
+                  <div className="mark-color-row" role="group" aria-label="新标记默认色">
+                    {MARK_COLORS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={"dot dot-" + c + (draft.markDefaultColor === c ? " active" : "")}
+                        title={MARK_COLOR_LABELS[c]}
+                        aria-label={"默认" + MARK_COLOR_LABELS[c] + "色"}
+                        aria-pressed={draft.markDefaultColor === c}
+                        onClick={() => patch({ markDefaultColor: c })}
+                      />
+                    ))}
+                    <span className="mark-color-name">{MARK_COLOR_LABELS[draft.markDefaultColor]}色</span>
+                  </div>
+                  <p className="set-note">四色与阅读主题正交：浅色 / 深色 / 护眼 / 羊皮纸主题下均清晰可辨。</p>
+                </div>
+                <div className="set-card">
+                  <div className="adv-row">
+                    <span className="k">标记数据</span>
+                    <span className="v">{markTotal} 条 · 本机 localStorage</span>
+                  </div>
+                  <div className="adv-row">
+                    <span className="k">标记存储</span>
+                    <span className="v">bookeditor.marks.v1</span>
+                  </div>
+                </div>
+                <p className="set-note">
+                  标记按书管理；从书架移除某本书的记录时会一并清掉它的标记。面板内支持搜索、按色筛选与 Markdown 导出。
+                </p>
               </section>
             )}
 

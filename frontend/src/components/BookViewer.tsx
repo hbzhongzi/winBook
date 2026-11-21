@@ -9,6 +9,7 @@ import { ALL_TAB, UNCLASSIFIED, allCategories, visibleCategories } from "../util
 import TextViewer from "./TextViewer";
 import PdfViewer from "./PdfViewer";
 import EpubViewer from "./EpubViewer";
+import type { MarksContext } from "./marksContext";
 
 type Props = {
   book: main.BookData | null;
@@ -43,6 +44,8 @@ type Props = {
   onOpenManager: () => void;
   /** v0.2.9：PDF 视图交互回调（透传给 PdfViewer） */
   pdfView?: PdfViewHandlers;
+  /** v0.3.0：标记记录上下文（透传给三 Viewer；缺失时纯阅读无标记） */
+  marksCtx?: MarksContext;
 };
 
 const formatLabel: Record<string, string> = { epub: "EPUB", pdf: "PDF", txt: "TXT" };
@@ -77,6 +80,7 @@ export default function BookViewer({
   onRemoveEntry,
   onOpenManager,
   pdfView,
+  marksCtx,
 }: Props) {
   // ===== v0.2.8 分类交互状态 =====
   // 卡片分类标签菜单：menuPath 为打开菜单的图书 path；newCatFor 为「就地新建分类」态
@@ -428,6 +432,7 @@ export default function BookViewer({
             resume={fmtResume}
             getterRef={getterRef}
             onReady={handleReady}
+            marksCtx={marksCtx}
           />
         )}
         {book.format === "pdf" && (
@@ -439,6 +444,7 @@ export default function BookViewer({
             getterRef={getterRef}
             onReady={handleReady}
             pdfView={pdfView}
+            marksCtx={marksCtx}
           />
         )}
         {book.format === "epub" && (
@@ -449,6 +455,7 @@ export default function BookViewer({
             resume={fmtResume}
             getterRef={getterRef}
             onReady={handleReady}
+            marksCtx={marksCtx}
             onChapterChange={(title) =>
               onDetail(
                 title

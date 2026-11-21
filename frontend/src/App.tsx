@@ -8,6 +8,9 @@ import BookViewer from "./components/BookViewer";
 import StatusBar from "./components/StatusBar";
 import SettingsPanel from "./components/SettingsPanel";
 import ShelfManager from "./components/ShelfManager";
+import MarksPanel from "./components/MarksPanel";
+import MarkNoteEditor from "./components/MarkNoteEditor";
+import type { MarksContext, AddMarkInput } from "./components/marksContext";
 import { toAppError, type AppError } from "./utils/appError";
 import {
   addCategory,
@@ -41,6 +44,18 @@ import {
   type PositionReport,
   type ReadingPosition,
 } from "./utils/library";
+import {
+  loadMarks,
+  addMark,
+  updateMark,
+  removeMark,
+  clearBookMarks,
+  clearAllMarks,
+  subscribeMarks,
+  type Mark,
+  type MarkColor,
+  type MarkLocator,
+} from "./utils/marks";
 
 type Book = main.BookData;
 
@@ -69,6 +84,26 @@ export default function App() {
   const positionGetterRef = useRef<(() => PositionReport | null) | null>(null);
   // v0.2.9：PDF 实际缩放上报（工具栏数值 / 状态栏文案 / 倍率微调基点同一真相）
   const [pdfScale, setPdfScale] = useState<{ pct: number; fit: PdfFit } | null>(null);
+
+  // ===== v0.3.0 标记记录 =====
+  // 全量标记（App 单一事实源；按 bookPath 过滤后交给 Viewer/面板）。
+  // 订阅覆盖同页写入与多实例 storage 事件（与 settings/library 一致）。
+  const [marks, setMarks] = useState<Mark[]>(() => loadMarks());
+  // 面板开关（工具栏按钮 / Ctrl+M / Esc 由面板自理）
+  const [showMarks, setShowMarks] = useState(false);
+  // 跳转目标：面板点条目置入；nonce 防同一条目重复触发
+  const [markJump, setMarkJump] = useState<{ mark: Mark; nonce: number } | null>(null);
+  // 感悟编辑器：new = 新建（划词/写想法，locator 由调用方给出）；
+  // edit = 编辑既有条目（回显 note/color）
+  const [noteEdit, setNoteEdit] = useState<
+    | { mode: "new"; quote: string; idea?: boolean; locator: MarkLocator }
+    | { mode: "edit"; mark: Mark }
+    | null
+  >(null);
+  // 标记操作轻提示（复用 .app-toast，2.6s 自动消失）
+  const [markToast, setMarkToast] = useState<string | null>(null);
+  const markToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markNonceRef = useRef(0);
 
   // ===== 过渡动画状态（v0.2.1）=====
   // busy：打开/恢复位置的加载遮罩（leaving = 淡出中，220ms 后卸载）
@@ -116,6 +151,30 @@ export default function App() {
     if (!entries.some((e) => entryCategory(e) === currentCat)) setCurrentCat(ALL_TAB);
   }, [entries, currentCat]);
 
+  // v0.3.0：标记订阅（同页写入与其他实例 storage 事件都经此刷新）
+  useEffect(() => subscribeMarks(setMarks), []);
+
+  // 标记轻提示：复用 .app-toast，2.6s 自动消失（连续触发只重置计时）
+  const showMarkToast = useCallback((msg: string) => {
+    setMarkToast(msg);
+    if (markToastTimer.current) clearTimeout(markToastTimer.current);
+    markToastTimer.current = setTimeout(() => setMarkToast(null), 2600);
+  }, []);
+
+  // 复制到剪贴板：失败（权限/非安全上下文）时如实提示，不静默
+  const copyToClipboard = useCallback(
+    (text: string): Promise<void> =>
+      navigator.clipboard
+        ? navigator.clipboard.writeText(text).then(
+            () => undefined,
+            () => {
+              throw new Error("clipboard");
+            }
+          )
+        : Promise.reject(new Error("clipboard")),
+    []
+  );
+
   // 主题/强调色/字号挂载到 documentElement：theme 走 data-theme 分支，
   // accent 与字号走 inline CSS 变量（与主题正交，深色分支不定义 --accent）
   useEffect(() => {
@@ -134,6 +193,11 @@ export default function App() {
   bookMirrorRef.current = book;
   const showSettingsRef = useRef(showSettings);
   showSettingsRef.current = showSettings;
+  // v0.3.0：Ctrl+M 门控镜像（effect 单次注册，需读实时值）
+  const noteEditMirrorRef = useRef(noteEdit);
+  noteEditMirrorRef.current = noteEdit;
+  const showShelfManagerRef = useRef(showShelfManager);
+  showShelfManagerRef.current = showShelfManager;
   useEffect(() => {
     const fire = (key: string): boolean => {
       const action = resolveHotkeyAction(key, settingsMirrorRef.current.hotkeys);
@@ -181,6 +245,8 @@ export default function App() {
     () => () => {
       if (busyTimer.current) clearTimeout(busyTimer.current);
       if (savedTimer.current) clearTimeout(savedTimer.current);
+      if (dropHintTimer.current) clearTimeout(dropHintTimer.current);
+      if (markToastTimer.current) clearTimeout(markToastTimer.current);
     },
     []
   );
@@ -409,6 +475,25 @@ export default function App() {
     return () => window.removeEventListener("keydown", onOpenKey);
   }, [handleOpen]);
 
+  // v0.3.0：Ctrl+M 打开/关闭标记记录面板（F38）。仿 Ctrl+O 做窗口级拦截，
+  // 防止 WebView2 默认加速键；无书时面板无宿主故不劫键；设置面板/编辑器/
+  // 书架管理打开时键归更高层模态。
+  useEffect(() => {
+    const onMarkKey = (ev: KeyboardEvent) => {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey) return;
+      if (ev.key !== "m" && ev.key !== "M") return;
+      if (!bookMirrorRef.current) return; // 欢迎页不劫键
+      if (showSettingsRef.current) return; // 设置面板打开：键归面板
+      if (noteEditMirrorRef.current) return; // 感悟编辑器打开：键归编辑器
+      if (showShelfManagerRef.current) return; // 书架管理对话框：键归对话框
+      ev.preventDefault();
+      setShowMarks((v) => !v);
+    };
+    window.addEventListener("keydown", onMarkKey);
+    return () => window.removeEventListener("keydown", onMarkKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Viewer 初始渲染（含位置恢复）完成：淡出加载遮罩；清空瞬态恢复位
   // （M8：切换模式时的 transientResume 仅用于本次重挂载恢复，恢复后丢弃）
   const handleReady = useCallback(() => {
@@ -428,16 +513,27 @@ export default function App() {
 
   const handleRemoveEntry = useCallback((path: string) => {
     removeEntry(path);
+    // D70：移除书架记录时同步清掉该书的标记（按 path 主键关联，无孤儿数据）
+    clearBookMarks(path);
   }, []);
 
   // v0.2.8：批量移除（管理对话框「移除所选」），单次写盘（D59）
   const handleRemoveEntries = useCallback((paths: string[]) => {
     removeEntries(paths);
+    // D70：批量移除同样清标记（逐本 clear，写盘合并由订阅广播兜底）
+    paths.forEach((p) => clearBookMarks(p));
   }, []);
 
   const handleClearLibrary = useCallback(() => {
     clearLibrary();
+    // D70：清空书架 = 全部阅读记录失效，标记整体清空（与单本移除同口径）
+    clearAllMarks();
   }, []);
+
+  // 回到欢迎页（无书）时关闭标记面板：面板以当前书为宿主，无书无意义
+  useEffect(() => {
+    if (!book) setShowMarks(false);
+  }, [book]);
 
   // v0.2.8：图书归类；cat 为空串表示「未分类」
   const handleAssignCategory = useCallback((path: string, cat: string) => {
@@ -457,6 +553,104 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onUnload);
   }, [flushCurrent]);
 
+  // ===== v0.3.0 标记记录：上下文组装（Viewer/面板共用）=====
+  // 当前书标记：App 持有全量，按 path 过滤后下发（关闭总开关时仍传入，
+  // 既有高亮照常展示，只是不弹新工具条）。
+  const currentBookMarks = useMemo(
+    () => (book ? marks.filter((m) => m.bookPath === book.path) : []),
+    [marks, book]
+  );
+
+  // 「＋ 写想法」的定位器：取当前阅读处（§4.10）。EPUB 优先 relocated 的
+  // cfi，缺失时退回 href（epubjs display 两种 target 都认，spine.get 同解）；
+  // 完全无实时位置（Viewer 未上报）时给中性定位器，条目不依赖定位展示。
+  const ideaLocator = useCallback((): MarkLocator => {
+    const pos = positionGetterRef.current?.()?.position ?? null;
+    if (pos && book && pos.kind === book.format) {
+      if (pos.kind === "epub") return { kind: "epub", cfi: pos.cfi || pos.href, href: pos.href, chapter: "" };
+      if (pos.kind === "pdf") return { kind: "pdf", page: pos.page, quote: "" };
+      return { kind: "txt", start: pos.anchor ?? 0, end: pos.anchor ?? 0 };
+    }
+    if (book?.format === "pdf") return { kind: "pdf", page: 1, quote: "" };
+    if (book?.format === "epub") return { kind: "epub", cfi: "", href: "", chapter: "" };
+    return { kind: "txt", start: 0, end: 0 };
+  }, [book]);
+
+  const marksCtx = useMemo<MarksContext>(
+    () => ({
+      marks: currentBookMarks,
+      enabled: settings.markEnabled,
+      defaultColor: settings.markDefaultColor,
+      onAdd: (input: AddMarkInput): Mark => {
+        const path = book?.path ?? bookPathRef.current ?? "";
+        const m = addMark({ bookPath: path, ...input });
+        if (path) showMarkToast("已标记");
+        return m;
+      },
+      onUpdate: (id: string, patch: { color?: MarkColor }) => updateMark(id, patch),
+      onNoteNew: (info: { quote: string; locator: MarkLocator; idea?: boolean }) =>
+        setNoteEdit({ mode: "new", quote: info.quote, idea: info.idea, locator: info.locator }),
+      onEdit: (m: Mark) => setNoteEdit({ mode: "edit", mark: m }),
+      onDelete: (id: string) => {
+        removeMark(id);
+        showMarkToast("已删除标记");
+      },
+      onCopy: (text: string) => {
+        void copyToClipboard(text).then(
+          () => showMarkToast("已复制"),
+          () => showMarkToast("复制失败：请检查浏览器权限")
+        );
+      },
+      jumpTarget: markJump,
+      onJumpDone: () => setMarkJump(null),
+    }),
+    [currentBookMarks, settings.markEnabled, settings.markDefaultColor, book, markJump, showMarkToast, copyToClipboard]
+  );
+
+  // 面板跳转：置入 nonce 目标（Viewer 消费后回调 onJumpDone 清空）
+  const handleMarkJump = useCallback((m: Mark) => {
+    markNonceRef.current += 1;
+    setMarkJump({ mark: m, nonce: markNonceRef.current });
+  }, []);
+
+  // 面板「＋ 写想法」：默认色 + 当前阅读处定位
+  const handleWriteIdea = useCallback(() => {
+    setNoteEdit({ mode: "new", quote: "", idea: true, locator: ideaLocator() });
+  }, [ideaLocator]);
+
+  // 感悟编辑器保存：new=落库（划词带原文/想法空原文）；edit=改 note/color。
+  // 空 note 合法（纯高亮，§4.9）；保存后统一关闭编辑器。
+  const handleNoteSave = useCallback(
+    (note: string, color: MarkColor) => {
+      const cur = noteEdit;
+      if (!cur) return;
+      const path = book?.path ?? bookPathRef.current ?? "";
+      if (cur.mode === "new") {
+        addMark({
+          bookPath: path,
+          color,
+          text: cur.idea ? "" : cur.quote,
+          note,
+          locator: cur.locator,
+          ...(cur.idea ? { idea: true } : {}),
+        });
+        showMarkToast(cur.idea ? "想法已记录" : note ? "已保存感悟" : "已标记");
+      } else {
+        updateMark(cur.mark.id, { note, color });
+        showMarkToast("已保存感悟");
+      }
+      setNoteEdit(null);
+    },
+    [noteEdit, book, showMarkToast]
+  );
+
+  // 面板「清空本书」：MarksPanel 内已做二次确认，这里直接执行
+  const handleClearBookMarks = useCallback(() => {
+    if (!book) return;
+    clearBookMarks(book.path);
+    showMarkToast("已清空本书标记");
+  }, [book, showMarkToast]);
+
   return (
     <div className="app">
       <Toolbar
@@ -469,28 +663,50 @@ export default function App() {
         onModeChange={toggleReaderMode}
         pdfScalePct={book?.format === "pdf" ? pdfScale?.pct ?? null : null}
         onZoomNudge={handleZoomNudge}
+        markEnabled={settings.markEnabled}
+        markOpen={showMarks}
+        markCount={currentBookMarks.length}
+        onToggleMarks={() => setShowMarks((v) => !v)}
       />
       <ErrorBar error={error} onClose={() => setError(null)} />
-      <BookViewer
-        book={book}
-        openCount={openCount}
-        settings={settings}
-        readerMode={settings.readerMode}
-        entries={entries}
-        customCats={customCats}
-        currentCat={currentCat}
-        onCategoryChange={setCurrentCat}
-        onAssignCategory={handleAssignCategory}
-        onCreateCategory={handleCreateCategory}
-        resume={transientResume ?? resume}
-        getterRef={positionGetterRef}
-        onDetail={setDetail}
-        onReady={handleReady}
-        onOpenPath={(path) => void handleOpen(path)}
-        onRemoveEntry={handleRemoveEntry}
-        onOpenManager={() => setShowShelfManager(true)}
-        pdfView={pdfView}
-      />
+      {/* v0.3.0：正文区 + 标记面板同行（面板 340px 固定在右侧） */}
+      <div className="app-body">
+        <BookViewer
+          book={book}
+          openCount={openCount}
+          settings={settings}
+          readerMode={settings.readerMode}
+          entries={entries}
+          customCats={customCats}
+          currentCat={currentCat}
+          onCategoryChange={setCurrentCat}
+          onAssignCategory={handleAssignCategory}
+          onCreateCategory={handleCreateCategory}
+          resume={transientResume ?? resume}
+          getterRef={positionGetterRef}
+          onDetail={setDetail}
+          onReady={handleReady}
+          onOpenPath={(path) => void handleOpen(path)}
+          onRemoveEntry={handleRemoveEntry}
+          onOpenManager={() => setShowShelfManager(true)}
+          pdfView={pdfView}
+          marksCtx={marksCtx}
+        />
+        {showMarks && book && (
+          <MarksPanel
+            bookName={book.name.replace(/\.[^.]+$/, "")}
+            marks={currentBookMarks}
+            allMarks={marks}
+            onClose={() => setShowMarks(false)}
+            onJump={handleMarkJump}
+            onEdit={marksCtx.onEdit}
+            onWriteIdea={handleWriteIdea}
+            onDelete={marksCtx.onDelete}
+            onClearBook={handleClearBookMarks}
+            onToast={showMarkToast}
+          />
+        )}
+      </div>
       <StatusBar
         book={book}
         detail={detail}
@@ -516,6 +732,21 @@ export default function App() {
           onClose={() => setShowShelfManager(false)}
         />
       )}
+      {/* v0.3.0：感悟编辑器（划词「写感悟」/ 面板「写想法」/ 条目「编辑」）。
+          key 保证切换编辑目标时草稿不串味（组件自持 note/color 草稿态） */}
+      {noteEdit && (
+        <MarkNoteEditor
+          key={noteEdit.mode === "edit" ? noteEdit.mark.id : "new"}
+          quote={noteEdit.mode === "edit" ? noteEdit.mark.text : noteEdit.quote}
+          idea={noteEdit.mode === "edit" ? noteEdit.mark.idea : noteEdit.idea}
+          initialColor={
+            noteEdit.mode === "edit" ? noteEdit.mark.color : settings.markDefaultColor
+          }
+          initialNote={noteEdit.mode === "edit" ? noteEdit.mark.note : ""}
+          onSave={handleNoteSave}
+          onCancel={() => setNoteEdit(null)}
+        />
+      )}
       {/* 打开/恢复加载遮罩：进入书架续读时的过渡反馈 */}
       {busy && (
         <div className={"loading-overlay" + (busy.leaving ? " leaving" : "")} role="status">
@@ -535,6 +766,12 @@ export default function App() {
       {dropHint && (
         <div className="app-toast" role="status">
           {dropHint}
+        </div>
+      )}
+      {/* v0.3.0：标记操作轻提示（已标记/已删除/已复制等） */}
+      {markToast && (
+        <div className="app-toast" role="status">
+          {markToast}
         </div>
       )}
     </div>

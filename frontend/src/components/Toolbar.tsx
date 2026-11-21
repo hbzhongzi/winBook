@@ -14,6 +14,14 @@ type Props = {
   pdfScalePct?: number | null;
   /** v0.2.9：倍率微调（±PDF_ZOOM_NUDGE），非 PDF 时不渲染该组 */
   onZoomNudge?: (delta: number) => void;
+  /** v0.3.0：标记记录总开关（settings.markEnabled）；关闭时不渲染入口 */
+  markEnabled?: boolean;
+  /** v0.3.0：面板是否打开（按钮 active 态） */
+  markOpen?: boolean;
+  /** v0.3.0：当前书标记数（徽标；0 不显示徽标） */
+  markCount?: number;
+  /** v0.3.0：打开/关闭标记面板（Ctrl+M 同一动作） */
+  onToggleMarks?: () => void;
 };
 
 const formatLabel: Record<string, string> = { epub: "EPUB", pdf: "PDF", txt: "TXT" };
@@ -24,7 +32,21 @@ function formatSize(size: number): string {
   return size + " B";
 }
 
-export default function Toolbar({ book, loading, readerMode, onOpen, onShelf, onSettings, onModeChange, pdfScalePct, onZoomNudge }: Props) {
+export default function Toolbar({
+  book,
+  loading,
+  readerMode,
+  onOpen,
+  onShelf,
+  onSettings,
+  onModeChange,
+  pdfScalePct,
+  onZoomNudge,
+  markEnabled,
+  markOpen,
+  markCount,
+  onToggleMarks,
+}: Props) {
   return (
     <header className="toolbar">
       <button type="button" className="btn-primary" onClick={onOpen} disabled={loading}>
@@ -82,6 +104,28 @@ export default function Toolbar({ book, loading, readerMode, onOpen, onShelf, on
               翻页
             </button>
           </div>
+        )}
+        {/* v0.3.0：标记记录入口（阅读中常显；徽标显示当前书标记数） */}
+        {book && markEnabled && (
+          <button
+            type="button"
+            className={"mark-entry" + (markOpen ? " active" : "")}
+            onClick={onToggleMarks}
+            title={
+              "标记记录（Ctrl+M）" +
+              (markCount ? " · 当前 " + markCount + " 条" : "")
+            }
+            aria-label="标记记录"
+            aria-pressed={!!markOpen}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            <span className="me-label">标记</span>
+            {!!markCount && markCount > 0 && (
+              <span className="me-badge">{markCount > 99 ? "99+" : markCount}</span>
+            )}
+          </button>
         )}
         {/* v0.2.9：PDF 缩放快捷组（－ 倍率 ＋），仅 PDF 阅读中显示 */}
         {book?.format === "pdf" && (
