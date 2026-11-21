@@ -872,6 +872,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
       return;
     }
     const cx = iframeRect.left + rect.left - hostRect.left + rect.width / 2;
+    epubDiag("TOOLBAR_SHOW", `${hit ? "existing" : "new"} cfi=${cfi.slice(0, 48)} len=${text.length}`);
     const top = iframeRect.top + rect.top - hostRect.top;
     const bottom = iframeRect.top + rect.bottom - hostRect.top;
     setToolbar({
@@ -895,6 +896,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     const r = g.getBoundingClientRect();
     if (r.width <= 0 && r.height <= 0) return;
     setToolbar(null);
+    epubDiag("BUBBLE_SHOW", `id=${m.id}`);
     setBubble({
       mark: m,
       x: Math.min(Math.max(r.left - hostRect.left, 8), Math.max(8, hostRect.width - 268)),
@@ -959,6 +961,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   // 工具条动作（§4.3/4.4/4.6）：色点落库/改色 → marks 变更 → syncAnnotations 挂高亮
   const onToolbarColor = (color: MarkColor) => {
     const ctx = marksCtxRef.current;
+    epubDiag("TOOLBAR_ACTION", `color=${color} hasCtx=${!!ctx} hasToolbar=${!!toolbar} mode=${toolbar?.mode ?? "-"}`);
     if (!ctx || !toolbar) return;
     if (toolbar.mode === "existing" && toolbar.markId) {
       ctx.onUpdate(toolbar.markId, { color }); // 改色
@@ -971,6 +974,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
   const onToolbarNote = () => {
     const ctx = marksCtxRef.current;
+    epubDiag("TOOLBAR_ACTION", `note hasCtx=${!!ctx} hasToolbar=${!!toolbar} mode=${toolbar?.mode ?? "-"}`);
     if (!ctx || !toolbar) return;
     if (toolbar.mode === "existing" && toolbar.markId) {
       const m = ctx.marks.find((x) => x.id === toolbar.markId);
@@ -1147,6 +1151,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           if (inner && !markDismissBoundDocs.has(inner)) {
             markDismissBoundDocs.add(inner);
             inner.addEventListener("mousedown", () => {
+              epubDiag("MARK_DISMISS", "iframe mousedown");
               setToolbar(null);
               setBubble(null);
             });
@@ -1481,6 +1486,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           // 点击走 bindStageMarks 的命中测试（见上方滚动分支）。
           rendition.on?.("markClicked", (cfi: unknown, data: unknown) => {
             const id = (data as { id?: string } | undefined)?.id;
+            epubDiag("MARK_CLICKED", `id=${id ?? "-"}`);
             if (!id) return;
             const ctx = marksCtxRef.current;
             if (!ctx?.enabled) return;

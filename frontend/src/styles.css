@@ -1517,7 +1517,10 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
 /* ===== 划词工具条 ===== */
 .mark-toolbar {
   position: absolute;
-  z-index: 40;
+  /* D89：翻页模式 iframe 可交互（滚动模式 pointer-events:none），且 iframe 带
+     translateZ(0) 会创建层叠上下文。旧值 40 低于诊断按钮/加载遮罩，点击可能被
+     iframe 层拦截，表现为「工具条在但点颜色/写感悟没反应」。提到遮罩之上确保命中。 */
+  z-index: 1002;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1569,7 +1572,7 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
 /* ===== 高亮点击气泡 ===== */
 .mark-bubble {
   position: absolute;
-  z-index: 41;
+  z-index: 1003;
   width: 260px;
   background: var(--surface-bg);
   border: 1px solid var(--border);
