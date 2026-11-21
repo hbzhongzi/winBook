@@ -206,6 +206,43 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * D81：EPUB 渲染 DOM 状态探针，写入诊断日志。
+ * 定位「能打开但正文纯白」——记录 iframe 数量/可见性/正文文本长度、view 数量/displayed 状态。
+ * 只读，不影响渲染流程。
+ */
+function probeEpubDom(
+  container: HTMLElement | null,
+  rendition: EpubRendition | null,
+  tag: string
+): void {
+  const frames = container ? Array.from(container.querySelectorAll<HTMLIFrameElement>("iframe")) : [];
+  const views = rendition?.manager?.views?.all?.() ?? [];
+  const displayed = views.filter(
+    (v) => (v as unknown as { displayed?: boolean }).displayed === true
+  ).length;
+  let info = `probe=${tag} frames=${frames.length} views=${views.length} displayed=${displayed}`;
+  for (let i = 0; i < Math.min(frames.length, 3); i++) {
+    const f = frames[i];
+    let len = -1;
+    let ready = "?";
+    let vis = "?";
+    try {
+      const d = f.contentDocument;
+      if (d) {
+        ready = d.readyState;
+        len = (d.body?.innerText || d.body?.textContent || "").replace(/\s+/g, "").length;
+        vis = f.style.visibility || getComputedStyle(f).visibility;
+      }
+    } catch {
+      ready = "xdomain";
+    }
+    const r = f.getBoundingClientRect();
+    info += ` | f${i}[${Math.round(r.width)}x${Math.round(r.height)} ready=${ready} vis=${vis} len=${len}]`;
+  }
+  epubDiag(info);
+}
+
+/**
  * 等待 stage 滚动高度稳定：100ms 轮询，连续两轮相同即返回（或超时）。
  * 位置恢复时用——iframe 章节异步渲染期间 scrollHeight 会持续变化，
  * 未稳定时按比例设 scrollTop 会偏。
@@ -1204,6 +1241,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         epubDiag("DISPLAY_START", `target=${startTarget ?? "(none)"}`);
         await withTimeout(rendition.display(startTarget), OPEN_TIMEOUT_MS);
         epubDiag("DISPLAY_OK");
+        probeEpubDom(container, rendition, "after-display");
         if (destroyed) return;
 
         if (!isPage) {
@@ -1551,6 +1589,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // 表现为目录正常、正文纯白且无任何错误提示（用户实测反馈）。
         let state = await settleAndCheck(container, rendition, true);
         epubDiag("SETTLE_STRICT", `state=${state}`);
+        probeEpubDom(container, rendition, "after-settle-strict");
         if (destroyed) return;
         if (state !== false) {
           failOnDisplayError = false; // 位置恢复的 display 失败只降级，不判整本失败
@@ -1563,9 +1602,31 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
                 ? `kind=epub cfi=${!!r0.cfi} href=${r0.href ?? ""}`
                 : `kind=${r0.kind}`
           );
+          probeEpubDom(container, rendition, "before-resume");
           await applyResume();
+          probeEpubDom(container, rendition, "after-resume");
           failOnDisplayError = true;
           if (destroyed) return;
+
+          // D81：applyResume 用旧 CFI/href 二次 display()，其内部 clear() 会重建章节流。
+          // 历史缺陷（e59acee）：二次 display 对部分书永久挂起，超时被内部 catch 吞掉后
+          // 停在「view 已清空、新内容未挂载」的纯白态——这正是"能打开但正文全白"的表现。
+          // 这里复检：若恢复后确认空白，重新 display 首章把正文捞回来，绝不留在纯白。
+          let postState = await settleAndCheck(container, rendition, false);
+          epubDiag("SETTLE_AFTER_RESUME", `state=${postState}`);
+          probeEpubDom(container, rendition, "after-resume-settle");
+          if (destroyed) return;
+          if (postState === false) {
+            try {
+              await withTimeout(rendition.display(startTarget), OPEN_TIMEOUT_MS);
+              epubDiag("RESUME_BLANK_RECOVERED", `display=${startTarget ?? "(none)"}`);
+              probeEpubDom(container, rendition, "after-recover");
+            } catch {
+              fail("位置恢复后正文空白且首章重显失败");
+              return;
+            }
+            if (destroyed) return;
+          }
           initialPhase = false;
           epubDiag("OPEN_OK", "首章内容正常");
           return; // 有内容 / 无法判定 → 接受
@@ -1785,7 +1846,17 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     <section className="state state-epub active" aria-label="EPUB 显示" ref={sectionRef}>
       {toc.length > 0 && (
         <aside className="toc-sidebar">
-          <div className="toc-title">目录</div>
+          <div className="toc-title">
+            目录
+            <button
+              type="button"
+              className="epub-live-diag-toggle"
+              title="查看 EPUB 渲染诊断"
+              onClick={() => setDiagOpen((v) => !v)}
+            >
+              {diagOpen ? "收起诊断" : "诊断"}
+            </button>
+          </div>
           {toc.map((item, i) => (
             <button
               key={item.href + ":" + i}
@@ -1803,6 +1874,20 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         </aside>
       )}
       <div className="epub-content" ref={containerRef} />
+      {diagOpen && (
+        <div className="epub-live-diag-box">
+          <pre>{getEpubDiagText() || "(无诊断记录)"}</pre>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              void navigator.clipboard?.writeText(getEpubDiagText()).catch(() => undefined);
+            }}
+          >
+            复制日志
+          </button>
+        </div>
+      )}
       {toolbar && (
         <MarkToolbar
           x={toolbar.x}
