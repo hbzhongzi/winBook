@@ -13,11 +13,25 @@ const BRUSH_META: { key: Exclude<PdfBrush, "eraser">; label: string; title: stri
   { key: "pen", label: "自由笔", title: "自由笔：实色细线，可写字圈画" },
 ];
 
-const SIZE_PRESETS = [
-  { scale: 0.6, label: "细" },
-  { scale: 1, label: "中" },
-  { scale: 1.8, label: "粗" },
-];
+// 粗细：D102 改为连续可调控的进度条（滑块）。
+// 旧实现是三档按钮（细/中/粗），只能跳档、无法微调——用户在 PDF 上写字时
+// 粗细差一点点手感就完全不同，故换成 range 滑块。范围与 PdfInkCanvas 的
+// 钳制区间一致（0.4–4），默认 1。
+export const SIZE_MIN = 0.4;
+export const SIZE_MAX = 4;
+export const SIZE_STEP = 0.1;
+
+/** 滑块某一档对应的实际像素线宽（用于右侧「16.0」这类读数） */
+function widthOf(brush: PdfBrush, sizeScale: number): number {
+  const base = brush === "highlighter" ? 16 : 2.5;
+  return base * sizeScale;
+}
+
+/** 粗细钳制：与 PdfInkCanvas 落笔时的 Math.max(0.4, Math.min(4, …)) 保持同一区间 */
+export function clampSize(v: number): number {
+  if (!Number.isFinite(v)) return 1;
+  return Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round(v * 10) / 10));
+}
 
 type Props = {
   tool: InkTool;
@@ -90,18 +104,24 @@ export default function PdfInkToolbar({
             ))}
           </div>
           <div className="ib-sep" />
-          <div className="ib-group" role="group" aria-label="粗细">
-            {SIZE_PRESETS.map((s) => (
-              <button
-                key={s.scale}
-                type="button"
-                className={"ib-btn" + (tool.sizeScale === s.scale ? " on" : "")}
-                aria-pressed={tool.sizeScale === s.scale}
-                onClick={() => onChange({ sizeScale: s.scale })}
-              >
-                {s.label}
-              </button>
-            ))}
+          <div className="ib-group ib-size" role="group" aria-label="粗细">
+            <span className="ib-size-label">粗细</span>
+            <input
+              type="range"
+              className="ib-range"
+              min={SIZE_MIN}
+              max={SIZE_MAX}
+              step={SIZE_STEP}
+              value={clampSize(tool.sizeScale)}
+              aria-label="笔刷粗细"
+              aria-valuemin={SIZE_MIN}
+              aria-valuemax={SIZE_MAX}
+              aria-valuenow={clampSize(tool.sizeScale)}
+              onChange={(e) => onChange({ sizeScale: clampSize(Number(e.target.value)) })}
+            />
+            <span className="ib-size-val">
+              {widthOf(tool.brush === "eraser" ? "pen" : tool.brush, clampSize(tool.sizeScale)).toFixed(1)}
+            </span>
           </div>
         </>
       )}

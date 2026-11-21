@@ -339,10 +339,11 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     localStorage.clear();
   });
 
-  it("DEFAULT_SETTINGS 含三字段且口径正确", () => {
+  it("DEFAULT_SETTINGS 含四字段且口径正确", () => {
     expect(DEFAULT_SETTINGS.pdfFit).toBe("auto");
     expect(DEFAULT_SETTINGS.pdfZoom).toBe(100);
     expect(DEFAULT_SETTINGS.pdfDpr).toBe(true);
+    expect(DEFAULT_SETTINGS.pdfColumns).toBe(1);
   });
 
   it("旧配置（无三字段）载入后回落默认，不抛错", () => {
@@ -355,24 +356,47 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(s.pdfFit).toBe("auto");
     expect(s.pdfZoom).toBe(100);
     expect(s.pdfDpr).toBe(true);
+    expect(s.pdfColumns).toBe(1);
   });
 
-  it("normalizeSettings 逐字段校验：非法 fit/越界 zoom/非布尔 dpr", () => {
+  it("D102：旧 pdfFit=spread 配置迁移出 pdfColumns=2（double 页阅读不回退）", () => {
+    localStorage.setItem(
+      "bookeditor.settings.v4",
+      JSON.stringify({ theme: "light", pdfFit: "spread", pdfZoom: 120 })
+    );
+    const s = loadSettings();
+    // 栏数迁移：原本的双页阅读升级后仍然是双栏，不回退成单页
+    expect(s.pdfColumns).toBe(2);
+    // pdfFit 原值保留（白名单内），语义由 migratePdfFit 在读取侧解释为 auto
+    expect(s.pdfFit).toBe("spread");
+    expect(s.pdfZoom).toBe(120);
+  });
+
+  it("D102：显式 pdfColumns 优先于迁移（1 也能覆盖旧 spread）", () => {
+    const s = normalizeSettings({ pdfFit: "spread", pdfColumns: 1 });
+    expect(s.pdfColumns).toBe(1);
+  });
+
+  it("normalizeSettings 逐字段校验：非法 fit/越界 zoom/非布尔 dpr/非法栏数", () => {
     const s = normalizeSettings({
       pdfFit: "neon" as never,
       pdfZoom: 9999,
       pdfDpr: "yes" as never,
+      pdfColumns: 7 as never,
     });
     expect(s.pdfFit).toBe("auto");
     expect(s.pdfZoom).toBe(400);
     expect(s.pdfDpr).toBe(true);
+    expect(s.pdfColumns).toBe(1);
   });
 
-  it("合法值原样保留（含 spread 与自定义倍率）", () => {
+  it("合法值原样保留（含 spread 别名与自定义倍率）", () => {
     const s = normalizeSettings({ pdfFit: "spread", pdfZoom: 175, pdfDpr: false });
+    // spread 保留原值（由导航层 migratePdfFit 解释），同时迁移出 pdfColumns=2
     expect(s.pdfFit).toBe("spread");
     expect(s.pdfZoom).toBe(175);
     expect(s.pdfDpr).toBe(false);
+    expect(s.pdfColumns).toBe(2);
   });
 
   it("saveSettings 合并语义：只改 pdfFit 不动其余字段", () => {
@@ -392,12 +416,13 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(loadSettings().pdfZoom).toBe(130);
   });
 
-  it("resetSettings 把三字段复位为默认", () => {
-    saveSettings({ pdfFit: "spread", pdfZoom: 300, pdfDpr: false });
+  it("resetSettings 把四字段复位为默认", () => {
+    saveSettings({ pdfFit: "spread", pdfZoom: 300, pdfDpr: false, pdfColumns: 2 });
     const s = resetSettings();
     expect(s.pdfFit).toBe("auto");
     expect(s.pdfZoom).toBe(100);
     expect(s.pdfDpr).toBe(true);
+    expect(s.pdfColumns).toBe(1);
   });
 });
 

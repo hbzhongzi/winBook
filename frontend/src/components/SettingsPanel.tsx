@@ -24,6 +24,7 @@ import {
   PDF_ZOOM_MAX,
   PDF_ZOOM_MIN,
   PDF_ZOOM_STEP,
+  migratePdfFit,
 } from "../utils/pdfScale";
 import {
   DEFAULT_HOTKEYS,
@@ -406,7 +407,7 @@ export default function SettingsPanel({ settings, onOpenManager, onChange, onClo
                         PDF 适配方式 <span className="tag-roadmap">v0.2.9</span>
                       </h3>
                       <p className="set-desc">
-                        默认「自适应」：按容器与页面宽高比，自动取适宽 / 适高中倍率更大者。适宽字号最大但需页内纵向滚动；适高 / 双页整页可见，适合看图与版式。
+                        默认「自适应」：按容器与页面宽高比，自动取适宽 / 适高中倍率更大者。适宽字号最大但需页内纵向滚动；适高整页可见，适合看图与版式。栏数在下方单独设置，与适配方式互不影响。
                       </p>
                     </div>
                   </div>
@@ -415,13 +416,33 @@ export default function SettingsPanel({ settings, onOpenManager, onChange, onClo
                       <button
                         key={f}
                         type="button"
-                        className={"mode-opt" + (draft.pdfFit === f ? " active" : "")}
+                        className={"mode-opt" + (migratePdfFit(draft.pdfFit) === f ? " active" : "")}
                         onClick={() => patch({ pdfFit: f })}
-                        aria-pressed={draft.pdfFit === f}
+                        aria-pressed={migratePdfFit(draft.pdfFit) === f}
                       >
                         {FIT_LABELS[f]}
                       </button>
                     ))}
+                  </div>
+                  {/* D102：栏数是独立维度——任何适配方式与倍率下都不改变栏数 */}
+                  <div className="set-card-row">
+                    <span className="set-row-label">
+                      页面布局
+                      <span className="set-sub">单栏 / 双栏并排；与适配方式、倍率完全独立，缩放不会打破栏数</span>
+                    </span>
+                    <span className="mode-seg" role="group" aria-label="PDF 栏数">
+                      {([1, 2] as const).map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          className={"mode-opt" + (draft.pdfColumns === c ? " active" : "")}
+                          onClick={() => patch({ pdfColumns: c })}
+                          aria-pressed={draft.pdfColumns === c}
+                        >
+                          {c === 1 ? "单栏" : "双栏"}
+                        </button>
+                      ))}
+                    </span>
                   </div>
                   <div className={"set-card-row" + (draft.pdfFit !== "custom" ? " row-off" : "")}>
                     <span className="set-row-label">

@@ -22,7 +22,9 @@ import {
 import { loadSettings, saveSettings, subscribeSettings, type ReaderMode, type Settings } from "./utils/settings";
 import {
   FIT_LABELS,
+  migratePdfFit,
   nudgeZoom,
+  type PdfColumns,
   type PdfFit,
   type PdfViewHandlers,
 } from "./utils/pdfScale";
@@ -325,16 +327,19 @@ export default function App() {
       onFitChange: (fit: PdfFit) => handleSettingsChange({ ...settings, pdfFit: fit }),
       onZoomPreset: (zoom: number) => handleSettingsChange({ ...settings, pdfFit: "custom", pdfZoom: zoom }),
       onZoomNudge: handleZoomNudge,
+      // D102：栏数切换是独立维度——切栏不动 pdfFit / pdfZoom，反之亦然
+      onColumnsChange: (columns: PdfColumns) => handleSettingsChange({ ...settings, pdfColumns: columns }),
     }),
     [handleScaleReport, handleSettingsChange, handleZoomNudge, settings]
   );
 
-  // v0.2.9：状态栏 PDF 动态文案（实际适配方式 + 倍率 + 高清开关）
+  // v0.2.9：状态栏 PDF 动态文案（实际适配方式 + 栏数 + 倍率 + 高清开关）
   const pdfDetail =
     book?.format === "pdf" && pdfScale
       ? (settings.readerMode === "page" ? "单页翻页" : "连续滚动") +
         " · " +
-        FIT_LABELS[pdfScale.fit] +
+        (settings.readerMode === "page" ? (settings.pdfColumns === 2 ? "双栏" : "单栏") + " · " : "") +
+        FIT_LABELS[migratePdfFit(pdfScale.fit)] +
         " " +
         pdfScale.pct +
         "% · 高清渲染" +

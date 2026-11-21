@@ -73,6 +73,15 @@ export type Settings = {
   pdfZoom: number;
   /** PDF 高清渲染（v0.2.9）：按 devicePixelRatio（上限 2）渲染位图；关闭按 CSS 像素 */
   pdfDpr: boolean;
+  /**
+   * PDF 栏数（D102）：1 = 单栏，2 = 双栏（并排两页）。
+   *
+   * 与 `pdfFit` 彻底解耦。旧实现把「双页」当成一种**适配方式**，于是选自适应/适宽/
+   * 适高/自定义全部退回单页 —— 用户改缩放就打破双栏，这就是「缩放会破坏栏规则」的根因。
+   * 现在栏数是独立维度：任何适配方式、任何倍率下，栏数都不变。
+   * 存量缺省 1；若旧配置 `pdfFit === "spread"` 则归一化为 `pdfColumns = 2`（见 normalize）。
+   */
+  pdfColumns: 1 | 2;
   /** 标记记录总开关（v0.3.0 F31）：关闭后不弹划词工具条、面板入口隐藏；存量缺省 true */
   markEnabled: boolean;
   /** 新标记默认高亮色（v0.3.0）：写感悟/写想法入口的初始色，可随时改色；缺省 yellow */
@@ -130,6 +139,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pdfFit: PDF_FIT_DEFAULT,
   pdfZoom: PDF_ZOOM_DEFAULT,
   pdfDpr: true,
+  pdfColumns: 1,
   markEnabled: true,
   markDefaultColor: "yellow",
 };
@@ -182,6 +192,18 @@ export function accentHover(accent: string): string {
   return hit ? hit.hover : ACCENTS[0].hover;
 }
 
+/**
+ * 栏数归一化（D102）：显式 1/2 才采用；缺字段从旧口径迁移。
+ *
+ * 旧版本把「双页」做成 `pdfFit` 的一个取值，所以存量配置里可能只有
+ * `pdfFit: "spread"` 而没有 `pdfColumns`。此时必须迁移成 2，否则升级后
+ * 用户原本的双页阅读会莫名退回单页（属于行为回归，不能放过）。
+ */
+export function normalizePdfColumns(v: unknown, legacyFit: unknown): 1 | 2 {
+  if (v === 1 || v === 2) return v;
+  return normalizePdfFit(legacyFit) === "spread" ? 2 : 1;
+}
+
 /** 逐字段校验：非法值静默回落默认（与 v1 clamp 行为一致） */
 export function normalizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   const r = raw ?? {};
@@ -199,6 +221,9 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     pdfZoom: clampPdfZoom(Number(r.pdfZoom)),
     // 显式 boolean 才采用；缺字段（旧配置）默认开启高清
     pdfDpr: typeof r.pdfDpr === "boolean" ? r.pdfDpr : true,
+    // 栏数（D102）：显式 1/2 才采用；缺字段时从旧口径迁移——
+    // 旧版「双页」是 pdfFit 的一个取值，故 pdfFit==="spread" → 2，其余 → 1。
+    pdfColumns: normalizePdfColumns(r.pdfColumns, r.pdfFit),
     // 标记记录开关（v0.3.0）：旧配置缺字段默认开启，存量零回归
     markEnabled: typeof r.markEnabled === "boolean" ? r.markEnabled : true,
     // 新标记默认色（v0.3.0）：白名单外回落 yellow

@@ -307,6 +307,23 @@ pre.txt-viewer {
   cursor: pointer;
 }
 .pdf-ink-bar .ib-dot.on { border-color: var(--text); transform: scale(1.12); }
+/* D102：粗细由三档按钮改为连续滑块（可微调，附实时像素读数） */
+.pdf-ink-bar .ib-size { gap: 6px; }
+.pdf-ink-bar .ib-size-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.pdf-ink-bar .ib-size-val {
+  min-width: 30px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  text-align: right;
+}
+.pdf-ink-bar .ib-range {
+  width: 92px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 .pdf-footer {
   position: absolute;
   bottom: 10px;
@@ -1568,7 +1585,12 @@ pre.txt-viewer {
 /* 正文与标记面板的行容器（面板 340px 固定右侧，正文 flex:1） */
 .app-body { flex: 1; min-height: 0; display: flex; position: relative; }
 
-/* ===== 高亮（TXT <mark> / EPUB SVG <g> 挂 mark-hl） ===== */
+/* ===== 高亮：TXT <mark> 与 EPUB SVG <g> 必须分成两套 ===== */
+/* D102 根因（务必读）：.mark-hl-* 曾同时作用于 TXT 的 <mark> 和 EPUB 的 SVG <g>。
+   SVG <g> 上设 background 时，浏览器按 <g> 的**包围盒**（所有高亮行的外接矩形）填色，
+   多行高亮就连成一整块实心矩形盖住正文（滚动模式尤其明显）——截图实证。
+   故：HTML 侧（TXT）用 background + inset 下划线；SVG 侧只允许 fill 相关属性，
+   **绝不设 background / box-shadow / padding**，否则又会长出矩形块。 */
 .mark-hl {
   border-radius: 2px;
   padding: 0 1px;
@@ -1576,10 +1598,24 @@ pre.txt-viewer {
   transition: filter .15s;
 }
 .mark-hl:hover { filter: brightness(.96); }
-.mark-hl-yellow { background: var(--hl-yellow); box-shadow: inset 0 -2px 0 var(--hl-yellow-line); }
-.mark-hl-green  { background: var(--hl-green);  box-shadow: inset 0 -2px 0 var(--hl-green-line); }
-.mark-hl-blue   { background: var(--hl-blue);   box-shadow: inset 0 -2px 0 var(--hl-blue-line); }
-.mark-hl-pink   { background: var(--hl-pink);   box-shadow: inset 0 -2px 0 var(--hl-pink-line); }
+/* —— TXT（HTML 元素）专用 —— */
+mark.mark-hl-yellow { background: var(--hl-yellow); box-shadow: inset 0 -2px 0 var(--hl-yellow-line); }
+mark.mark-hl-green  { background: var(--hl-green);  box-shadow: inset 0 -2px 0 var(--hl-green-line); }
+mark.mark-hl-blue   { background: var(--hl-blue);   box-shadow: inset 0 -2px 0 var(--hl-blue-line); }
+mark.mark-hl-pink   { background: var(--hl-pink);   box-shadow: inset 0 -2px 0 var(--hl-pink-line); }
+/* —— EPUB（SVG）专用 —— */
+/* 高亮实际颜色由 annotation 的 fill / fill-opacity 属性给出（MARK_HL_FILLS），
+   这里只做「不要出现任何矩形背景」的硬保证 + 悬停反馈。 */
+g.mark-hl,
+g.mark-hl-yellow,
+g.mark-hl-green,
+g.mark-hl-blue,
+g.mark-hl-pink {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+g.mark-hl:hover { filter: brightness(.94); }
 /* TXT 高亮闪烁：box-shadow 圆环脉冲（HTML 元素） */
 .mark-hl.mark-flash { animation: markRing 1.6s ease; }
 @keyframes markRing {

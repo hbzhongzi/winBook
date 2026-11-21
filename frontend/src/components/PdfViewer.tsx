@@ -18,10 +18,12 @@ import {
   PDF_ZOOM_NUDGE,
   PDF_ZOOM_PRESETS,
   clampSpreadLeft,
+  columnStep,
   fitRatio,
+  migratePdfFit,
   resolvePdfScale,
   spreadLeftMax,
-  spreadStep,
+  type PdfColumns,
   type PdfFit,
   type PdfViewHandlers,
   type ResolvedPdfScale,
@@ -297,9 +299,11 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
       setReaderCommandHandler((action, key) => {
         if (pageCount <= 0) return false;
         const area = areaRef.current;
-        const spread = spreadStep(settingsRef.current.pdfFit) === 2;
+        // D102：栏数是独立设置的维度，不再从 pdfFit 推导（否则一切缩放都会退回单页）
+        const cols = settingsRef.current.pdfColumns;
+        const spread = cols === 2;
         const flip = (p: number, d: number) => {
-          const n = p + d * (spread ? 2 : 1);
+          const n = p + d * columnStep(cols);
           return spread ? clampSpreadLeft(n, pageCount) : Math.min(pageCount, Math.max(1, n));
         };
         // 方向键页内滚动优先：仅 ArrowUp/ArrowDown，且本页确实高于视口
@@ -356,7 +360,16 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
         return null;
       }
       const base = page.getViewport({ scale: 1 });
-      const r = resolvePdfScale(s.pdfFit, s.pdfZoom, box.w, box.h, base.width, base.height, s.pdfDpr);
+      const r = resolvePdfScale(
+        s.pdfFit,
+        s.pdfZoom,
+        box.w,
+        box.h,
+        base.width,
+        base.height,
+        s.pdfDpr,
+        s.pdfColumns
+      );
       if (r.scale <= 0) return null;
       lastResolvedRef.current = r; // 档位菜单据此显示各方式实际倍率
       // 渲染（renderOnCanvas 负责同 canvas 的在飞任务 cancel+await，杜绝“multiple render”抛错）
@@ -371,7 +384,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     async (pageNum: number) => {
       const host = hostRef.current;
       const area = areaRef.current;
-      const spread = spreadStep(settingsRef.current.pdfFit) === 2;
+      // D102：栏数独立于适配方式
+      const spread = settingsRef.current.pdfColumns === 2;
       const left = spread ? clampSpreadLeft(pageNum, pageCountRef.current) : pageNum;
       cancelRenderTask();
       try {
@@ -438,7 +452,17 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     } else {
       void renderPage(current);
     }
-  }, [isScroll, pageCount, box.w, box.h, settings.pdfFit, settings.pdfZoom, settings.pdfDpr, renderPage]);
+  }, [
+    isScroll,
+    pageCount,
+    box.w,
+    box.h,
+    settings.pdfFit,
+    settings.pdfZoom,
+    settings.pdfDpr,
+    settings.pdfColumns,
+    renderPage,
+  ]);
 
   // ===== 连续滚动：窗口计算 + 虚拟化渲染 =====
   useEffect(() => {
@@ -494,7 +518,16 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
       if (token.stale) return;
       const s = settingsRef.current;
       const base = page.getViewport({ scale: 1 });
-      const r = resolvePdfScale(s.pdfFit, s.pdfZoom, box.w, box.h, base.width, base.height, s.pdfDpr);
+      const r = resolvePdfScale(
+        s.pdfFit,
+        s.pdfZoom,
+        box.w,
+        box.h,
+        base.width,
+        base.height,
+        s.pdfDpr,
+        s.pdfColumns
+      );
       if (r.scale <= 0) return;
       const idx = pageNum - 1;
       // 回填真实高度/宽度 → 滚动条精确；并据此重钉恢复的目标页顶
@@ -563,7 +596,10 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           winRef.current = { min: 0, max: 0 };
           setWin({ min: 0, max: 0 });
         } else {
-          setCurrent(spreadStep(settingsRef.current.pdfFit) === 2 ? clampSpreadLeft(start, pdf.numPages) : start);
+          // D102：栏数独立——初始定位按栏数决定是否摊开到左页
+          setCurrent(
+            settingsRef.current.pdfColumns === 2 ? clampSpreadLeft(start, pdf.numPages) : start
+          );
         }
       } catch {
         if (!cancelled) {
@@ -829,7 +865,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   const jumpInputRef = useRef<HTMLInputElement>(null);
   const flipFrom = useCallback((p: number, d: number) => {
     const n = pageCountRef.current;
-    if (spreadStep(settingsRef.current.pdfFit) === 2) return clampSpreadLeft(p + d * 2, n);
+    const cols = settingsRef.current.pdfColumns;
+    if (cols === 2) return clampSpreadLeft(p + d * columnStep(cols), n);
     return Math.min(n, Math.max(1, p + d));
   }, []);
   const openJump = useCallback(() => {
@@ -986,7 +1023,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     );
   }
 
-  const spreadOn = spreadStep(settings.pdfFit) === 2;
+  // D102：栏数来自独立设置，与适配方式/倍率完全解耦——缩放永不改变栏数
+  const spreadOn = settings.pdfColumns === 2;
   const nextLimit = spreadOn ? spreadLeftMax(pageCount) : pageCount;
   const chipFit = settings.pdfFit;
 
@@ -1166,7 +1204,13 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
             aria-expanded={zoomMenuOpen}
             title="适配方式与倍率（Ctrl+滚轮也可调）"
           >
-            <span>{(chipFit === "custom" ? "自定义" : FIT_LABELS[chipFit]) + " " + (scalePct > 0 ? scalePct + "%" : "—")}</span>
+            <span>
+              {(chipFit === "custom" ? "自定义" : FIT_LABELS[migratePdfFit(chipFit)]) +
+                " · " +
+                (settings.pdfColumns === 2 ? "双栏" : "单栏") +
+                " " +
+                (scalePct > 0 ? scalePct + "%" : "—")}
+            </span>
             <span className="cv">&#9662;</span>
           </button>
           {zoomMenuOpen && (
@@ -1174,13 +1218,15 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
               <div className="menu-title">适配方式</div>
               {PDF_FITS.map((f: PdfFit) => {
                 const ratio = fitRatio(lastResolvedRef.current, f, settings.pdfZoom);
+                // D102：存量配置可能是 spread（旧的「双页」口径），比较时按迁移后的值
+                const cur = migratePdfFit(chipFit) === f;
                 return (
                   <button
                     key={f}
                     type="button"
                     role="menuitemradio"
-                    aria-checked={chipFit === f}
-                    className={"menu-item" + (chipFit === f ? " current" : "")}
+                    aria-checked={cur}
+                    className={"menu-item" + (cur ? " current" : "")}
                     onClick={() => {
                       viewRef.current?.onFitChange?.(f);
                       setZoomMenuOpen(false);
@@ -1192,6 +1238,25 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
                   </button>
                 );
               })}
+              <div className="menu-sep" />
+              {/* D102：栏数独立开关——任何适配方式/倍率下都保持不变 */}
+              <div className="menu-title">页面布局</div>
+              <div className="menu-presets">
+                {([1, 2] as PdfColumns[]).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className={settings.pdfColumns === c ? "on" : ""}
+                    aria-pressed={settings.pdfColumns === c}
+                    onClick={() => {
+                      viewRef.current?.onColumnsChange?.(c);
+                      setZoomMenuOpen(false);
+                    }}
+                  >
+                    {c === 1 ? "单栏" : "双栏"}
+                  </button>
+                ))}
+              </div>
               <div className="menu-sep" />
               <div className="menu-title">倍率预设（切到「自定义」后生效）</div>
               <div className="menu-presets">

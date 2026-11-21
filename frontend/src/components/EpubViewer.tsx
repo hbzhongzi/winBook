@@ -1154,8 +1154,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           MARK_HL_FILLS[m.color]
         );
         // add 只对「已渲染视图」挂载；此处补齐宿主样式类。
-        // 未渲染章节的补挂由 hooks.render 钩子（下方注册）完成。
-        anno?.mark?.element?.classList.add("mark-hl", "mark-hl-" + m.color);
+        // D102：**只加功能类 mark-hl，不加 mark-hl-{color}** ——
+        // SVG <g> 一旦带上带 background 的颜色类，浏览器会按包围盒涂一整块实心
+        // 矩形把正文盖住（滚动模式多行高亮时尤其明显）。EPUB 颜色由 fill 属性给出。
+        anno?.mark?.element?.classList.add("mark-hl");
         map.set(m.id, { cfi: m.locator.cfi, color: m.color });
       } catch {
         // CFI 无法解析（章节内容变化/书籍损坏）：跳过，下次同步重试
@@ -1431,7 +1433,11 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           view.element?.querySelectorAll<SVGGElement>("svg g[data-id]").forEach((g) => {
             const id = g.getAttribute("data-id");
             const m = ctx?.marks.find((x) => x.id === id);
-            if (m) g.classList.add("mark-hl", "mark-hl-" + m.color);
+            // D102：同 1158 行——只补功能类，不补带 background 的颜色类。
+            // 同时清掉可能残留的旧颜色类（升级前写入的 DOM 会带着它）。
+            if (!m) return;
+            g.classList.remove("mark-hl-yellow", "mark-hl-green", "mark-hl-blue", "mark-hl-pink");
+            g.classList.add("mark-hl");
           });
         });
 

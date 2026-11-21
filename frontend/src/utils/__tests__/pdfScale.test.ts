@@ -9,14 +9,16 @@ import {
   PDF_ZOOM_PRESETS,
   clampPdfZoom,
   clampSpreadLeft,
+  columnStep,
   currentDpr,
   fitRatio,
+  migratePdfFit,
+  normalizePdfColumns,
   normalizePdfFit,
   nudgeZoom,
   resolvePdfScale,
   spreadLeftMax,
   spreadLeftPage,
-  spreadStep,
   type PdfFit,
 } from "../pdfScale";
 
@@ -72,17 +74,48 @@ describe("pdfScale v0.2.9 — 适配解析", () => {
     expect(r.fit).toBe("height");
   });
 
-  it("spread 双页：倍率受两页总宽与容器高双重约束", () => {
-    const r = resolvePdfScale("spread", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true);
-    // sp = min(1236/(2×595.28), 679/841.89) = min(1.0387, 0.8064) = 0.8064
-    expect(r.fit).toBe("spread");
-    expect(r.scale).toBeCloseTo(BOX.ch / A4.ph, 4);
-    expect(r.cssW).toBe(480); // 单页宽；双页总宽 = 480×2 + 14
+  // D102：双页不再是 fit 取值，改用 columns=2 表达
+  it("双栏（columns=2）：auto 判定基于「扣掉间距后的一半宽」", () => {
+    const r = resolvePdfScale("auto", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
+    // sw = (1236−14)/(2×595.28) = 1.0264；sh = 679/841.89 = 0.8064
+    // auto 判据是 sw > sh，故此处判适宽（与单栏同容器的判定结果可能不同，正说明栏数参与了解析）
+    expect(r.fit).toBe("width");
+    expect(r.scale).toBeCloseTo((BOX.cw - 14) / (2 * A4.pw), 4);
+    // 单栏同容器下 sw = 1236/595.28 = 2.076，也判适宽，但倍率是双栏的两倍多
+    const one = resolvePdfScale("auto", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 1);
+    expect(one.scale).toBeGreaterThan(r.scale);
   });
 
-  it("spread 窄容器：转由两页总宽约束", () => {
-    const r = resolvePdfScale("spread", 100, 800, 679, A4.pw, A4.ph, true);
-    expect(r.scale).toBeCloseTo(800 / (2 * A4.pw), 4);
+  it("双栏：两页总宽恰好等于容器宽（含间距），无溢出", () => {
+    const r = resolvePdfScale("width", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
+    const totalW = r.cssW * 2 + 14;
+    expect(Math.abs(totalW - BOX.cw)).toBeLessThanOrEqual(2); // 允许 1px 舍入
+  });
+
+  it("双栏窄容器：转由两页总宽约束", () => {
+    const r = resolvePdfScale("width", 100, 800, 679, A4.pw, A4.ph, true, 2);
+    expect(r.scale).toBeCloseTo((800 - 14) / (2 * A4.pw), 4);
+  });
+
+  it("缩放彻底不改变栏数：同一 columns 下各 fit/倍率均只铺对应页数", () => {
+    for (const fit of ["auto", "width", "height", "custom"] as PdfFit[]) {
+      const r1 = resolvePdfScale(fit, 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 1);
+      const r2 = resolvePdfScale(fit, 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 2);
+      // 单栏的 sw 是双栏 sw 的两倍（双栏要扣间距再对半分），但 fit 语义不变
+      expect(r1.fit).toBe(r2.fit);
+      expect(r2.sw).toBeLessThan(r1.sw);
+      if (fit === "custom") {
+        // 自定义倍率与栏数完全无关：这正是「缩放不打破栏数」的判据
+        expect(r1.scale).toBe(r2.scale);
+      }
+    }
+  });
+
+  it("旧 spread 配置迁移：等价于 columns=2 的 auto 口径", () => {
+    const legacy = resolvePdfScale("spread", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 1);
+    const modern = resolvePdfScale("auto", 100, BOX.cw, BOX.ch, A4.pw, A4.ph, true, 1);
+    expect(legacy.scale).toBeCloseTo(modern.scale, 6);
+    expect(migratePdfFit("spread")).toBe("auto");
   });
 
   it("custom：用 pdfZoom，与容器尺寸无关", () => {
@@ -151,18 +184,43 @@ describe("pdfScale v0.2.9 — 适配解析", () => {
   });
 
   it("FIT_LABELS/PDF_FITS/预设表口径完整", () => {
-    expect(PDF_FITS).toEqual(["auto", "width", "height", "spread", "custom"]);
-    expect(Object.keys(FIT_LABELS)).toEqual(PDF_FITS);
+    // D102：菜单只给四种适配方式（spread 已剥离为独立的栏数开关）
+    expect(PDF_FITS).toEqual(["auto", "width", "height", "custom"]);
+    expect(PDF_FITS).not.toContain("spread");
+    // FIT_LABELS 仍需覆盖全部合法键（含兼容别名），避免查表时 undefined
+    expect(Object.keys(FIT_LABELS)).toEqual(["auto", "width", "height", "spread", "custom"]);
     expect(PDF_ZOOM_PRESETS).toContain(100);
     expect(PDF_ZOOM_PRESETS.every((p) => p >= PDF_ZOOM_MIN && p <= PDF_ZOOM_MAX)).toBe(true);
   });
+
+  // ===== D102：栏数独立于适配方式 =====
+  it("columnStep：栏数即步进", () => {
+    expect(columnStep(1)).toBe(1);
+    expect(columnStep(2)).toBe(2);
+  });
+
+  it("normalizePdfColumns：显式 1/2 采用，缺字段从 spread 迁移", () => {
+    expect(normalizePdfColumns(1)).toBe(1);
+    expect(normalizePdfColumns(2)).toBe(2);
+    expect(normalizePdfColumns(undefined, "spread")).toBe(2); // 旧双页配置迁移
+    expect(normalizePdfColumns(undefined, "auto")).toBe(1);
+    expect(normalizePdfColumns(undefined)).toBe(1);
+    expect(normalizePdfColumns(3)).toBe(1); // 越界回落
+    expect(normalizePdfColumns("2")).toBe(1); // 字符串不认，避免存储被手改成 "2" 时误判
+    expect(normalizePdfColumns(2, "auto")).toBe(2); // 显式优先于迁移
+  });
+
+  it("migratePdfFit：spread → auto，其余原样", () => {
+    expect(migratePdfFit("spread")).toBe("auto");
+    expect(migratePdfFit("width")).toBe("width");
+    expect(migratePdfFit("custom")).toBe("custom");
+  });
 });
 
-describe("pdfScale v0.2.9 — 双页步进与钳制", () => {
-  it("spreadStep：仅双页 2，其余 1", () => {
-    expect(spreadStep("spread")).toBe(2);
-    expect(spreadStep("auto")).toBe(1);
-    expect(spreadStep("custom")).toBe(1);
+describe("pdfScale v0.2.9 — 双栏步进与钳制", () => {
+  it("columnStep：栏数即步进（D102 取代 spreadStep(fit)）", () => {
+    expect(columnStep(2)).toBe(2);
+    expect(columnStep(1)).toBe(1);
   });
 
   it("spreadLeftPage：奇数取自身、偶数取前一页", () => {
