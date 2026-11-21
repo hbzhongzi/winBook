@@ -8,9 +8,14 @@ import { setReaderCommandHandler, setPagerShowHandler, scrollStepFor } from "../
 import { usePagerVisibility } from "../utils/usePagerVisibility";
 import { applyReadingStyle } from "../utils/readingTheme";
 import type { ReadingPosition, PositionReport } from "../utils/library";
+import { MARK_SELECT_MIN, type Mark, type MarkColor, type MarkLocator } from "../utils/marks";
+import MarkToolbar, { type MarkToolbarMode } from "./MarkToolbar";
+import type { MarksContext } from "./marksContext";
 
 /** 已绑定快捷键转发的章节文档（WeakSet 防同文档重复绑定，v0.2.5 F22） */
 const hotkeyBoundDocs = new WeakSet<Document>();
+/** 已绑定「点击消散工具条/气泡」的章节文档（v0.3.0，page 模式 iframe 吞 mousedown） */
+const markDismissBoundDocs = new WeakSet<Document>();
 
 // epubjs 类型声明不完整，按使用面定义最小接口
 type EpubNavItem = {
@@ -27,10 +32,39 @@ type TocTarget = EpubNavItem & {
 type EpubRendition = {
   display: (target?: string) => Promise<void>;
   resize: (width: string, height: string) => void;
-  on?: (event: string, cb: (payload: unknown) => void) => void;
+  on?: (event: string, cb: (...args: unknown[]) => void) => void;
   started?: Promise<unknown>;
   manager?: EpubManager;
-  hooks?: { content?: { register: (fn: (contents: EpubContents) => void) => void } };
+  hooks?: {
+    content?: { register: (fn: (contents: EpubContents) => void) => void };
+    render?: { register: (fn: (view: EpubView) => void) => void };
+  };
+  /**
+   * epubjs annotations（v0.3.0 标记高亮载体，D67 验证点）。
+   * highlight 以 Pane/SVG 覆盖层渲染：标记元素挂在宿主文档的 .epub-view 上
+   * （非 iframe 内），故颜色经 styles 参数物化、宿主 CSS 可直接作用。
+   * add 的 hash = encodeURI(cfiRange + type)，故 remove 必须同 type 成对调用；
+   * 换色只能 remove + add（颜色不在 hash 里）。
+   */
+  annotations?: {
+    add: (
+      type: string,
+      cfiRange: string,
+      data: Record<string, string>,
+      cb?: (() => void) | undefined,
+      className?: string,
+      styles?: Record<string, string>
+    ) => EpubAnnotation;
+    remove: (cfiRange: string, type: string) => void;
+  };
+  getRange?: (cfi: string) => Range | undefined;
+  views?: () => EpubView[];
+};
+/** annotations.add 返回值（epub.js Annotation）：mark.element 为已挂载的 <g> */
+type EpubAnnotation = {
+  cfiRange: string;
+  sectionIndex: number;
+  mark?: { element?: SVGElement | null } | null;
 };
 /** epubjs Section：窗口化管理只需 index 与相邻关系 */
 type EpubSection = {
@@ -40,7 +74,18 @@ type EpubSection = {
   prev: () => EpubSection | null;
   next: () => EpubSection | null;
 };
-type EpubView = { section: EpubSection; element: HTMLElement; destroy?: () => void };
+type EpubView = {
+  section: EpubSection;
+  element: HTMLElement;
+  destroy?: () => void;
+  /** 已渲染视图的 Contents（选词 CFI 反算 / 章节归属判定用） */
+  contents?: EpubContentsLite;
+};
+/** Contents 最小面：document 供文档比对，cfiFromRange 供选区转 CFI（epub.js 6571） */
+type EpubContentsLite = {
+  document?: Document | null;
+  cfiFromRange?: (range: Range) => string;
+};
 type EpubManager = {
   viewSettings?: Record<string, unknown>;
   views: {
@@ -77,6 +122,18 @@ type EpubBook = {
   };
 };
 
+/** 划词工具条状态（v0.3.0；坐标相对 section 定位容器，同 TextViewer 口径） */
+type ToolbarState = {
+  x: number;
+  y: number;
+  mode: MarkToolbarMode;
+  /** 划选原文（选区捕获，落库/复制用） */
+  text: string;
+  locator: MarkLocator;
+  /** existing 态：重叠的既有条目 id */
+  markId: string | null;
+};
+
 type Props = {
   dataBase64: string;
   settings: Settings;
@@ -92,6 +149,8 @@ type Props = {
   getterRef?: MutableRefObject<(() => PositionReport | null) | null>;
   /** 初始渲染（含位置恢复/失败兜底）完成：App 淡出加载遮罩 */
   onReady?: () => void;
+  /** v0.3.0 标记上下文（App 组装、BookViewer 透传）；缺失时纯阅读无标记 */
+  marksCtx?: MarksContext;
 };
 
 // epubjs 打开/目录加载超时：损坏文件时 epubjs 的 opened 可能永久挂起
@@ -101,6 +160,31 @@ const OPEN_TIMEOUT_MS = 10000;
 const SETTLE_MS = 700;
 // 首章渲染为空白的自动后移次数（商业书常见：首章为图片页/空壳页）
 const EMPTY_SECTION_RETRY = 1;
+
+/**
+ * v0.3.0 标记：annotations.add 的 type（与 remove 成对；epub.js 7943 行
+ * hash = encodeURI(cfiRange + type)，type 不一致会漏删）。
+ */
+const MARK_ANNO_TYPE = "highlight";
+/**
+ * annotations 的 className：必须是单 token——classList.add 不接受含空格的
+ * token（Chrome 抛 InvalidCharacterError，整个 add 会失败）。
+ * 宿主样式类（mark-hl / mark-hl-{color}）在挂载后由本组件补加。
+ */
+const MARK_ANNO_CLASS = "markhl";
+/**
+ * 高亮四色（SVG 覆盖层填充值，与 TXT .mark-hl-* CSS、基线 HTML --hl-* 同色值）。
+ * 覆盖 epubjs 默认的 fill:yellow + multiply：深色阅读主题下 multiply 会糊成一片，
+ * 统一 normal + 0.6 不透明度，light/dark/eye/sepia 四主题下均可见。
+ */
+const MARK_HL_FILLS: Record<MarkColor, Record<string, string>> = {
+  yellow: { fill: "#fef08a", "fill-opacity": "0.6", "mix-blend-mode": "normal" },
+  green: { fill: "#bbf7d0", "fill-opacity": "0.6", "mix-blend-mode": "normal" },
+  blue: { fill: "#bfdbfe", "fill-opacity": "0.6", "mix-blend-mode": "normal" },
+  pink: { fill: "#fbcfe8", "fill-opacity": "0.6", "mix-blend-mode": "normal" },
+};
+/** 拖拽选词的最小位移（px）：小于视为单击（走「点击高亮 → 气泡」） */
+const MARK_DRAG_MIN = 6;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -373,6 +457,87 @@ function bindStageInteraction(stage: HTMLElement, onLink: (href: string) => void
   return () => cleanups.forEach((fn) => fn());
 }
 
+/**
+ * 滚动模式划词桥接（v0.3.0）：iframe pointer-events:none 下原生拖拽选区不可用
+ * （事件根本进不了 iframe），在 stage 上记录 mousedown/mouseup 两端点，
+ * 用 iframe 文档自身的 caretRangeFromPoint 重建 Range、回填选区（原生选中视觉），
+ * 再统一交 onDragSelect。单击（位移 < MARK_DRAG_MIN）时对高亮 <g> 命中测试 → onMarkHit。
+ *
+ * 不监听 iframe 内 selectionchange：那是 page 模式的通道（rendition "selected"），
+ * 滚动模式若双通道会有 250ms 防抖造成的双弹工具条。
+ */
+function bindStageMarks(
+  stage: HTMLElement,
+  handlers: {
+    onDragSelect: (doc: Document, range: Range) => void;
+    onMarkHit: (id: string) => void;
+    onPress: () => void;
+  }
+): () => void {
+  let down: { x: number; y: number } | null = null;
+  const cleanups: (() => void)[] = [];
+
+  const onDown = (ev: MouseEvent) => {
+    handlers.onPress(); // 新一次按下：消散上一轮工具条/气泡
+    down = null;
+    if (ev.button !== 0) return;
+    const t = ev.target as HTMLElement | null;
+    if (t?.closest?.(".mark-toolbar, .mark-bubble")) return; // 工具条/气泡自身不参与
+    const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
+    if (!iframe) return;
+    const p = iframeContentPoint(iframe, ev);
+    if (!p) return;
+    down = { x: p.x, y: p.y };
+  };
+
+  const onUp = (ev: MouseEvent) => {
+    const start = down;
+    down = null;
+    if (!start || ev.button !== 0) return;
+    const t = ev.target as HTMLElement | null;
+    if (t?.closest?.(".mark-toolbar, .mark-bubble")) return;
+    const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
+    if (!iframe) return;
+    let doc: Document | null = null;
+    try {
+      doc = iframe.contentDocument;
+    } catch {
+      doc = null;
+    }
+    if (!doc?.body) return;
+    const end = iframeContentPoint(iframe, ev);
+    if (!end) return;
+    if (Math.hypot(end.x - start.x, end.y - start.y) > MARK_DRAG_MIN) {
+      // 拖拽选词：两端 caret → Range（坐标均为 iframe 文档内坐标）
+      const a = caretRangeAt(doc, start.x, start.y);
+      const b = caretRangeAt(doc, end.x, end.y);
+      const range = a && b ? rangeBetween(doc, a, b) : null;
+      if (!range) return;
+      // 回填选区：提供原生选中视觉。epubjs 的 selectionchange 监听会因此收到
+      // SELECTED 事件，但滚动模式不注册 selected 处理器，无副作用。
+      try {
+        const sel = doc.defaultView?.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      } catch {
+        // 忽略（个别文档拒绝程序化选区时仅损失选中视觉）
+      }
+      handlers.onDragSelect(doc, range);
+      return;
+    }
+    // 单击：高亮命中 → 气泡（§4.5）
+    const g = findMarkElAt(stage, ev.clientX, ev.clientY);
+    const id = g?.getAttribute("data-id");
+    if (id) handlers.onMarkHit(id);
+  };
+
+  stage.addEventListener("mousedown", onDown);
+  stage.addEventListener("mouseup", onUp);
+  cleanups.push(() => stage.removeEventListener("mousedown", onDown));
+  cleanups.push(() => stage.removeEventListener("mouseup", onUp));
+  return () => cleanups.forEach((fn) => fn());
+}
+
 /** 把宿主页面上的鼠标坐标换算为 iframe 文档内坐标 */
 function iframeContentPoint(
   iframe: HTMLIFrameElement,
@@ -380,6 +545,87 @@ function iframeContentPoint(
 ): { x: number; y: number } | null {
   const r = iframe.getBoundingClientRect();
   return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+}
+
+/** 命中某视口坐标的 iframe（滚动模式多章节多 iframe 纵向堆叠，取最上层） */
+function iframeAtPoint(root: HTMLElement, x: number, y: number): HTMLIFrameElement | null {
+  const iframes = root.querySelectorAll<HTMLIFrameElement>("iframe");
+  for (let i = iframes.length - 1; i >= 0; i--) {
+    const r = iframes[i].getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return iframes[i];
+  }
+  return null;
+}
+
+/** 找承载该文档的 iframe（选区坐标换算：iframe 视口坐标 + iframe 元素视口坐标 = 宿主视口坐标） */
+function iframeOfDoc(root: HTMLElement | null, doc: Document): HTMLIFrameElement | null {
+  if (!root) return null;
+  const iframes = root.querySelectorAll<HTMLIFrameElement>("iframe");
+  for (let i = 0; i < iframes.length; i++) {
+    let d: Document | null = null;
+    try {
+      d = iframes[i].contentDocument;
+    } catch {
+      d = null;
+    }
+    if (d === doc) return iframes[i];
+  }
+  return null;
+}
+
+/** iframe 文档内坐标 → caret Range（滚动模式拖拽选词桥接；无文本处返回 null） */
+function caretRangeAt(doc: Document, x: number, y: number): Range | null {
+  try {
+    return doc.caretRangeFromPoint(x, y);
+  } catch {
+    return null;
+  }
+}
+
+/** 两个 caret 按文档序组 Range（拖拽方向不限）；跨文档时返回 null（章节边界放弃） */
+function rangeBetween(doc: Document, a: Range, b: Range): Range | null {
+  if (a.startContainer.ownerDocument !== b.endContainer.ownerDocument) return null;
+  try {
+    const r = doc.createRange();
+    r.setStart(a.startContainer, a.startOffset);
+    r.setEnd(b.endContainer, b.endOffset);
+    if (!r.collapsed) return r;
+    const r2 = doc.createRange();
+    r2.setStart(b.startContainer, b.startOffset);
+    r2.setEnd(a.endContainer, a.endOffset);
+    return r2.collapsed ? null : r2;
+  } catch {
+    return null;
+  }
+}
+
+/** 命中测试：root 下所有 annotations 高亮 <g data-id>（SVG 覆盖层，宿主文档；取面积最小者） */
+function findMarkElAt(root: HTMLElement | null, x: number, y: number): SVGGElement | null {
+  if (!root) return null;
+  let best: SVGGElement | null = null;
+  let bestArea = Number.POSITIVE_INFINITY;
+  root.querySelectorAll<SVGGElement>("svg g[data-id]").forEach((g) => {
+    const r = g.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
+    const area = r.width * r.height;
+    if (area < bestArea) {
+      best = g;
+      bestArea = area;
+    }
+  });
+  return best;
+}
+
+/** 按 mark id 找高亮元素（跳转闪烁用） */
+function findMarkElById(root: HTMLElement | null, id: string): SVGGElement | null {
+  if (!root) return null;
+  return root.querySelector<SVGGElement>('svg g[data-id="' + id + '"]');
+}
+
+/** 归一化文本（EPUB 既有标记重叠判定：容忍跨元素选词的空白差异） */
+function normText(s: string): string {
+  return s.replace(/\s+/g, "");
 }
 
 /**
@@ -434,7 +680,7 @@ function createSectionNav(contentSectionIndexes: Set<number>, spine: EpubSpine):
   };
 }
 
-export default function EpubViewer({ dataBase64, settings, mode, onChapterChange, resume, getterRef, onReady }: Props) {
+export default function EpubViewer({ dataBase64, settings, mode, onChapterChange, resume, getterRef, onReady, marksCtx }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sectionRef = useRef<HTMLElement | null>(null); // 翻页 section：mousemove 监听挂这里（祖先，覆盖内容区与按钮组）
   const bookRef = useRef<EpubBook | null>(null);
@@ -479,6 +725,255 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   const activeRef = useRef(0);
   // 每个目录项都保留自己的 section + fragment；同一个 XHTML 可能包含多个目录项。
   const tocTargetsRef = useRef<TocTarget[]>([]);
+
+  // ===== v0.3.0 标记：上下文 / annotations 同步 / 工具条 / 气泡 / 跳转 =====
+  const marksCtxRef = useRef(marksCtx);
+  marksCtxRef.current = marksCtx;
+  // mark id → 已挂载 annotation（cfi + color）：换色需 remove+add（hash 只含 cfi+type）
+  const annoKeysRef = useRef<Map<string, { cfi: string; color: MarkColor }>>(new Map());
+  // 目录镜像：闭包里读即时值（选区所在章名回填用）
+  const tocRef = useRef<EpubNavItem[]>([]);
+  tocRef.current = toc;
+  const [toolbar, setToolbar] = useState<ToolbarState | null>(null);
+  const [bubble, setBubble] = useState<{ mark: Mark; x: number; y: number } | null>(null);
+  const jumpNonceRef = useRef(-1);
+
+  /** 清掉 iframe 内的程序化选区（宿主文档无选区可清；标记落库后调用） */
+  const clearSelection = () => {
+    window.getSelection()?.removeAllRanges();
+    const root = containerRef.current;
+    if (!root) return;
+    root.querySelectorAll<HTMLIFrameElement>("iframe").forEach((f) => {
+      try {
+        f.contentDocument?.defaultView?.getSelection()?.removeAllRanges();
+      } catch {
+        // 跨域不可访问：忽略
+      }
+    });
+  };
+
+  /** 选区所在章节信息：href 取 toc 目标 href（面板分组脚注用），chapter 取目录 label */
+  const chapterInfoForDoc = (doc: Document): { href: string; chapter: string } => {
+    const view = renditionRef.current?.views?.().find((v) => {
+      try {
+        return v.contents?.document === doc;
+      } catch {
+        return false;
+      }
+    });
+    const href = view?.section?.href ?? currentHrefRef.current;
+    const target = tocTargetsRef.current.find(
+      (t) => hrefWithoutHash(t.href) === hrefWithoutHash(href)
+    );
+    if (target) return { href: target.href, chapter: tocRef.current[target.index]?.label ?? "" };
+    return { href, chapter: tocRef.current[activeRef.current]?.label ?? "" };
+  };
+
+  /**
+   * 划词落工具条（§4.1/4.2/4.4）：两模式共用。
+   * - page 模式：iframe 可交互，epubjs selectionchange（250ms 防抖）→ rendition
+   *   "selected" 带 cfi 与 contents，range 由 getRange 反查；
+   * - scroll 模式：iframe pointer-events:none，由 bindStageMarks 自建 Range 后调入，
+   *   cfi 由 contents.cfiFromRange 现算。
+   * 坐标换算：选区矩形在 iframe 视口系，加 iframe 元素视口矩形才是宿主视口坐标。
+   */
+  const handleSelection = (doc: Document, range: Range, cfi: string | null) => {
+    const ctx = marksCtxRef.current;
+    const text = range.toString();
+    if (text.trim().length < MARK_SELECT_MIN || !ctx?.enabled) {
+      // 低于阈值 / 总开关关闭：不弹工具条（既有高亮照常显示，§3.3）
+      setToolbar(null);
+      return;
+    }
+    if (!cfi) {
+      setToolbar(null);
+      return;
+    }
+    const info = chapterInfoForDoc(doc);
+    const locator: MarkLocator = { kind: "epub", cfi, href: info.href, chapter: info.chapter };
+    // existing：与既有 epub 标记文本重叠（多条取首个）。EPUB 侧无稳定的 CFI 区间
+    // 相交原语，文本包含关系覆盖「重选同一段/更大段」的常见场景。
+    const sel = normText(text);
+    const hit = ctx.marks.find(
+      (m) =>
+        m.locator.kind === "epub" &&
+        m.text.length > 0 &&
+        (normText(m.text).includes(sel) || sel.includes(normText(m.text)))
+    );
+    const rect = range.getBoundingClientRect();
+    const host = sectionRef.current;
+    const hostRect = host?.getBoundingClientRect();
+    const iframe = iframeOfDoc(containerRef.current, doc);
+    const iframeRect = iframe?.getBoundingClientRect();
+    setBubble(null);
+    if (!hostRect || !iframeRect) {
+      setToolbar(null);
+      return;
+    }
+    const cx = iframeRect.left + rect.left - hostRect.left + rect.width / 2;
+    const top = iframeRect.top + rect.top - hostRect.top;
+    const bottom = iframeRect.top + rect.bottom - hostRect.top;
+    setToolbar({
+      // 以选区中心水平居中（CSS translateX(-50%)），夹紧在容器内（同 TXT 口径）
+      x: Math.min(Math.max(cx, 170), Math.max(170, hostRect.width - 170)),
+      // 上方空间不足翻到下方（§4.2）
+      y: top > 48 ? top - 42 : bottom + 6,
+      mode: hit ? "existing" : "new",
+      text,
+      locator,
+      markId: hit?.id ?? null,
+    });
+  };
+
+  /** 高亮点击 → 气泡（§4.5）：scroll 由 stage 命中测试调入；page 由 markClicked 调入 */
+  const showBubble = (m: Mark) => {
+    const host = sectionRef.current;
+    const hostRect = host?.getBoundingClientRect();
+    const g = findMarkElById(containerRef.current, m.id);
+    if (!hostRect || !g) return;
+    const r = g.getBoundingClientRect();
+    if (r.width <= 0 && r.height <= 0) return;
+    setToolbar(null);
+    setBubble({
+      mark: m,
+      x: Math.min(Math.max(r.left - hostRect.left, 8), Math.max(8, hostRect.width - 268)),
+      y: r.bottom - hostRect.top + 6,
+    });
+  };
+
+  /**
+   * annotations 同步（D67）：marks ↔ rendition.annotations 增量 diff。
+   * - 新增/换色：remove(cfi) + add（hash=cfi+type，换色必须重加）；
+   * - 删除：remove；
+   * - 章节未渲染时不急：epubjs hooks.render.inject 会在视图渲染时补挂，
+   *   本函数在「书籍打开完成」与「marks 变更」两个时机各跑一次兜底。
+   * 想法/空原文条目不挂高亮（ collapsed CFI 无可见区域，面板条目照常可跳转）。
+   */
+  const syncAnnotations = () => {
+    const annos = renditionRef.current?.annotations;
+    const ctx = marksCtxRef.current;
+    if (!annos || !ctx) return;
+    const map = annoKeysRef.current;
+    const seen = new Set<string>();
+    for (const m of ctx.marks) {
+      if (m.locator.kind !== "epub" || m.text.length === 0) continue;
+      seen.add(m.id);
+      const cur = map.get(m.id);
+      if (cur && cur.cfi === m.locator.cfi && cur.color === m.color) continue;
+      if (cur) {
+        try {
+          annos.remove(cur.cfi, MARK_ANNO_TYPE);
+        } catch {
+          // 移除失败不阻断重加
+        }
+      }
+      try {
+        const anno = annos.add(
+          MARK_ANNO_TYPE,
+          m.locator.cfi,
+          { id: m.id },
+          undefined,
+          MARK_ANNO_CLASS,
+          MARK_HL_FILLS[m.color]
+        );
+        // add 只对「已渲染视图」挂载；此处补齐宿主样式类。
+        // 未渲染章节的补挂由 hooks.render 钩子（下方注册）完成。
+        anno?.mark?.element?.classList.add("mark-hl", "mark-hl-" + m.color);
+        map.set(m.id, { cfi: m.locator.cfi, color: m.color });
+      } catch {
+        // CFI 无法解析（章节内容变化/书籍损坏）：跳过，下次同步重试
+      }
+    }
+    for (const [id, cur] of [...map]) {
+      if (seen.has(id)) continue;
+      try {
+        annos.remove(cur.cfi, MARK_ANNO_TYPE);
+      } catch {
+        // 忽略
+      }
+      map.delete(id);
+    }
+  };
+
+  // 工具条动作（§4.3/4.4/4.6）：色点落库/改色 → marks 变更 → syncAnnotations 挂高亮
+  const onToolbarColor = (color: MarkColor) => {
+    const ctx = marksCtxRef.current;
+    if (!ctx || !toolbar) return;
+    if (toolbar.mode === "existing" && toolbar.markId) {
+      ctx.onUpdate(toolbar.markId, { color }); // 改色
+    } else {
+      ctx.onAdd({ color, text: toolbar.text, locator: toolbar.locator });
+    }
+    clearSelection();
+    setToolbar(null);
+  };
+
+  const onToolbarNote = () => {
+    const ctx = marksCtxRef.current;
+    if (!ctx || !toolbar) return;
+    if (toolbar.mode === "existing" && toolbar.markId) {
+      const m = ctx.marks.find((x) => x.id === toolbar.markId);
+      if (m) ctx.onEdit(m);
+    } else {
+      ctx.onNoteNew({ quote: toolbar.text, locator: toolbar.locator });
+    }
+    clearSelection();
+    setToolbar(null);
+  };
+
+  const onToolbarCopy = () => {
+    if (toolbar) marksCtxRef.current?.onCopy(toolbar.text);
+    clearSelection();
+    setToolbar(null);
+  };
+
+  const onToolbarDelete = () => {
+    const ctx = marksCtxRef.current;
+    if (!ctx || !toolbar?.markId) return;
+    ctx.onDelete(toolbar.markId);
+    clearSelection();
+    setToolbar(null);
+  };
+
+  // marks 变更 → annotations 增量同步（打开前的早场由主 effect 打开完成回调兜底）
+  useEffect(() => {
+    syncAnnotations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marksCtx?.marks]);
+
+  // 跳转目标（§4.16/F35）：面板点条目 → display(cfi) 定位 + 高亮闪烁 1.6s。
+  // nonce 防同一条目重复触发；display 后章节流重建，annotation 经 hooks.render
+  // 补挂需等渲染，故闪烁做两级延迟重试。
+  useEffect(() => {
+    const ctx = marksCtxRef.current;
+    const jt = ctx?.jumpTarget ?? null;
+    if (!jt || jt.nonce === jumpNonceRef.current) return;
+    jumpNonceRef.current = jt.nonce;
+    const loc = jt.mark.locator;
+    const rendition = renditionRef.current;
+    if (loc.kind !== "epub" || !rendition) {
+      ctx?.onJumpDone();
+      return;
+    }
+    const flash = () => {
+      const g = findMarkElById(containerRef.current, jt.mark.id);
+      if (!g) return false;
+      g.classList.add("mark-hl", "mark-flash");
+      window.setTimeout(() => g.classList.remove("mark-flash"), 1600);
+      return true;
+    };
+    void (async () => {
+      try {
+        await withTimeout(Promise.resolve(rendition.display(loc.cfi)), OPEN_TIMEOUT_MS);
+        windowRef.current?.sync();
+      } catch {
+        // 定位失败：仍尝试闪烁（章节可能已渲染）
+      }
+      if (!flash()) window.setTimeout(() => { if (!flash()) window.setTimeout(flash, 500); }, 300);
+      ctx?.onJumpDone();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [marksCtx?.jumpTarget]);
 
   useEffect(() => {
     let destroyed = false;
@@ -527,6 +1022,8 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           manager: isPage ? "default" : "continuous",
         });
         renditionRef.current = rendition;
+        // 新书（或同书重开）：annotation 映射随旧 rendition 一起作废，重置以免漏删
+        annoKeysRef.current.clear();
 
         // 滚动归属：scrolled-doc 下 epubjs 把 iframe 撑到整章高度、由外层 stage 滚动。
         // 但 iframe 内文档本身仍可滚动（比 iframe 高几十 px），滚轮落在 iframe 上时
@@ -570,6 +1067,29 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               window.postMessage({ __readerPager: true }, "*");
             });
           }
+          // 划词工具条/气泡的点击消散（v0.3.0）：iframe 吞掉 mousedown，宿主
+          // stage 收不到（page 模式 iframe 可交互；scroll 模式本就走 stage 桥接，
+          // 此处监听不会触发，无害）。回调闭包创建于宿主域，可直接 setState。
+          // 工具条/气泡自身在宿主文档，其 mousedown 不经过 iframe，不受影响。
+          if (inner && !markDismissBoundDocs.has(inner)) {
+            markDismissBoundDocs.add(inner);
+            inner.addEventListener("mousedown", () => {
+              setToolbar(null);
+              setBubble(null);
+            });
+          }
+        });
+
+        // annotations 的 hooks.render.inject 先于本钩子注册（Rendition 构造时）：
+        // 章节视图渲染/补挂后，为高亮 <g> 补宿主样式类（flash 动画用；颜色已由
+        // styles 物化在 SVG 属性上，不依赖 CSS）。
+        rendition.hooks?.render?.register((view) => {
+          const ctx = marksCtxRef.current;
+          view.element?.querySelectorAll<SVGGElement>("svg g[data-id]").forEach((g) => {
+            const id = g.getAttribute("data-id");
+            const m = ctx?.marks.find((x) => x.id === id);
+            if (m) g.classList.add("mark-hl", "mark-hl-" + m.color);
+          });
         });
 
         // displayError：section 加载失败时 epubjs 只抛事件、display() 永久挂起，
@@ -691,6 +1211,36 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
             const offInteract = bindStageInteraction(stage, (href) => {
               logRef.current?.(`正文链接：${href}（暂未实现外部打开）`);
             });
+            // 划词桥接（v0.3.0）：iframe pointer-events:none 下原生拖拽选区不可用
+            const offMarks = bindStageMarks(stage, {
+              onPress: () => {
+                setToolbar(null);
+                setBubble(null);
+              },
+              onDragSelect: (doc, range) => {
+                // cfi 由所在视图的 Contents 反算（epub.js 6571）
+                const contents = renditionRef.current?.views?.().find((v) => {
+                  try {
+                    return v.contents?.document === doc;
+                  } catch {
+                    return false;
+                  }
+                })?.contents;
+                let cfi: string | null = null;
+                try {
+                  cfi = contents?.cfiFromRange?.(range) ?? null;
+                } catch {
+                  cfi = null;
+                }
+                handleSelection(doc, range, cfi);
+              },
+              onMarkHit: (id) => {
+                const ctx = marksCtxRef.current;
+                if (!ctx?.enabled) return;
+                const m = ctx.marks.find((x) => x.id === id);
+                if (m) showBubble(m);
+              },
+            });
 
             // 窗口化管理：以当前可见章节为中心维持 [c-pre, c+pre]，滚动时动态补齐/回收。
             const nav = createSectionNav(contentSectionIndexes, book.spine);
@@ -770,6 +1320,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               windowRef.current = null;
               offPointer();
               offInteract();
+              offMarks();
               if (getterRef && getterRef.current === collectPosition) {
                 getterRef.current = null;
               }
@@ -825,6 +1376,29 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           // 键盘翻页已上收 window 级统一派发（v0.2.5 F22）：不再挂 stage 监听，
           // 避免焦点在 stage 内时一次按键翻两页；iframe 内焦点经 hooks.content
           // 注入的 postMessage 转发器覆盖（见上方注入点）。
+          // 划词（v0.3.0）：page 模式 iframe 可交互，原生选区经 epubjs
+          // selectionchange（250ms 防抖）→ CONTENTS.SELECTED → rendition "selected"
+          // （epub.js 6526/9089/9108）。cfi 由事件直接给出，range 由 getRange 反查。
+          rendition.on?.("selected", (cfi: unknown, contents: unknown) => {
+            const cfiStr = typeof cfi === "string" ? cfi : "";
+            if (!cfiStr) return;
+            const doc = (contents as EpubContentsLite | undefined)?.document;
+            const range = rendition.getRange?.(cfiStr) ?? null;
+            if (!doc || !range) return;
+            handleSelection(doc, range, cfiStr);
+          });
+          // 高亮点击（v0.3.0 §4.5）：iframe 可交互时 epubjs proxyMouse 把点击
+          // 代理到 SVG 高亮元素 → VIEWS.MARK_CLICKED → rendition "markClicked"
+          // （epub.js 9922/8633/9125）。scroll 模式 iframe 不可交互，
+          // 点击走 bindStageMarks 的命中测试（见上方滚动分支）。
+          rendition.on?.("markClicked", (cfi: unknown, data: unknown) => {
+            const id = (data as { id?: string } | undefined)?.id;
+            if (!id) return;
+            const ctx = marksCtxRef.current;
+            if (!ctx?.enabled) return;
+            const m = ctx.marks.find((x) => x.id === id);
+            if (m) showBubble(m);
+          });
           // 章节级采集：取 relocated 当前章节（ratio 记 0，与 D32 章节级口径一致）。
           const collectPosition = (): PositionReport | null => {
             const h = currentHrefRef.current || (startTarget ?? "");
@@ -990,6 +1564,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         fail();
       } finally {
         initialPhase = false;
+        // 初始阶段收官：补一次 annotations 同步（早于打开完成的 marks 变更此刻生效；
+        // 失败路径 rendition 已销毁，syncAnnotations 内部判空跳过）。
+        if (!destroyed) syncAnnotations();
         // 初始阶段收官（接受/跳章成功/失败兜底）：通知 App 淡出加载遮罩。
         // destroyed 时不发：组件已被新书替换，发了会误淡掉新书的遮罩。
         if (!destroyed) onReadyRef.current?.();
@@ -1155,6 +1732,51 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         </aside>
       )}
       <div className="epub-content" ref={containerRef} />
+      {toolbar && (
+        <MarkToolbar
+          x={toolbar.x}
+          y={toolbar.y}
+          mode={toolbar.mode}
+          onColor={onToolbarColor}
+          onNote={onToolbarNote}
+          onCopy={onToolbarCopy}
+          onDelete={onToolbarDelete}
+        />
+      )}
+      {bubble && (
+        <div
+          className="mark-bubble"
+          style={{ left: bubble.x, top: bubble.y }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div className="mb-quote">{bubble.mark.text || "（无原文）"}</div>
+          {bubble.mark.note && <div className="mb-note">{bubble.mark.note}</div>}
+          <div className="mb-acts">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const m = bubble.mark;
+                setBubble(null);
+                marksCtxRef.current?.onEdit(m);
+              }}
+            >
+              编辑
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const id = bubble.mark.id;
+                setBubble(null);
+                marksCtxRef.current?.onDelete(id);
+              }}
+            >
+              删除
+            </button>
+          </div>
+        </div>
+      )}
       {mode === "page" && (
         <div
           className={"epub-pager" + (pager.visible ? " show" : "")}
