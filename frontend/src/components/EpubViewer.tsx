@@ -301,7 +301,14 @@ function flattenToc(items: EpubNavItem[], output: EpubNavItem[] = [], depth = 0)
 function tocDepth(item: EpubNavItem): number {
   if ((item.depth ?? 0) > 0) return item.depth ?? 0;
   const label = item.label.trim();
-  return /^(如何|本章小结|小结|总结|练习|案例)/.test(label) ? 1 : 0;
+  // 中文辅助性小节（既有口径）
+  if (/^(如何|本章小结|小结|总结|练习|案例)/.test(label)) return 1;
+  // D90：英文分部标题降级为子项。中文 EPUB 的「Part 1/Part I」若出自 nav 平铺
+  // （无 subitems），旧规则只认中文关键词，会把分部标题和故事主标题判成同一档，
+  // 目录里 76 项全是 13px 粗体，看不出大小标题。本样本 A Study in Scarlet 下的
+  // "Part 1"/"Part 2" 即属此类，识别后套 toc-depth-1（缩进/小字/次要色）。
+  if (/^(part|section|appendix)\s+(?:\d+|[ivxlcdm]+|one|two|three|four|five|six|seven|eight|nine|ten)\b/i.test(label)) return 1;
+  return 0;
 }
 
 /**
@@ -1474,6 +1481,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           // （epub.js 6526/9089/9108）。cfi 由事件直接给出，range 由 getRange 反查。
           rendition.on?.("selected", (cfi: unknown, contents: unknown) => {
             const cfiStr = typeof cfi === "string" ? cfi : "";
+            epubDiag("SELECTED_EVENT", `cfi=${cfiStr.slice(0, 48)}`);
             if (!cfiStr) return;
             const doc = (contents as EpubContentsLite | undefined)?.document;
             const range = rendition.getRange?.(cfiStr) ?? null;
