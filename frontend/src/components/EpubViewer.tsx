@@ -32,7 +32,9 @@ type TocTarget = EpubNavItem & {
 };
 type EpubRendition = {
   display: (target?: string) => Promise<void>;
-  resize: (width: string, height: string) => void;
+  // epubjs 运行时接受 number（像素）或 string（如 "100%"）；D88 起改用像素，
+  // 传 "100%" 会因 stage.size() 写入 style.width="100%" 触发宽度反馈暴涨。
+  resize: (width: string | number, height: string | number) => void;
   on?: (event: string, cb: (...args: unknown[]) => void) => void;
   started?: Promise<unknown>;
   manager?: EpubManager;
@@ -206,6 +208,20 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * D88：把 rendition resize 到容器的实测像素尺寸。
+ * 绝不能传 "100%"——epubjs stage.size() 遇到非数字会把容器 style.width 设成 "100%"，
+ * 而 .epub-container 的父级 overflow:hidden + 超宽 iframe 会让百分比层层放大，
+ * 实测宽度从 1042 指数暴涨到 22369620px（真机日志），当前页被推到可视区外 → 看不见正文。
+ * 传像素整数可切断反馈循环。
+ */
+function resizeRenditionToContainer(rendition: EpubRendition, container: HTMLElement): void {
+  const rect = container.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  rendition.resize(w, h);
+}
+
+/**
  * D81：EPUB 渲染 DOM 状态探针，写入诊断日志。
  * 定位「能打开但正文纯白」——记录 iframe 数量/可见性/正文文本长度、view 数量/displayed 状态。
  * 只读，不影响渲染流程。
@@ -350,7 +366,7 @@ async function settleAndCheck(
   if (iframeIsZeroSized(container)) {
     try {
       epubDiag("SETTLE_ZERO_RESIZE", "iframe<40px; resize clears views");
-      rendition.resize("100%", "100%");
+      resizeRenditionToContainer(rendition, container);
     } catch (e) {
       epubDiag("SETTLE_ZERO_ERR", (e as { message?: string })?.message ?? String(e));
     }
@@ -1787,7 +1803,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
       }
       epubDiag("RESIZE_BEGIN", "resize->manager.clear()");
       try {
-        rendition.resize("100%", "100%");
+        resizeRenditionToContainer(rendition, container);
       } catch (e) {
         epubDiag("RESIZE_ERR", (e as { message?: string })?.message ?? String(e));
         return;
