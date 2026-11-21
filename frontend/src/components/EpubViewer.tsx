@@ -1595,6 +1595,27 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         epubDiag("SETTLE_STRICT", `state=${state}`);
         probeEpubDom(container, rendition, "after-settle-strict");
         if (destroyed) return;
+        // D85：翻页模式无窗口管理器，只显示首章。本书首章是书名扉页（len=25，仅
+        // "The Complete Sherlock Holmes"），原 text.length>0 判定把它误判为有正文 →
+        // OPEN_OK 后一直停在扉页=「翻页没内容」。滚动模式靠窗口管理器补齐相邻章节
+        // 正文故无此问题。翻页模式追加最小正文阈值，空壳扉页强制走跳章到首个有正文章。
+        if (isPage && state === true) {
+          const iframe = container.querySelector("iframe");
+          let textLen = -1;
+          try {
+            textLen = (
+              iframe?.contentDocument?.body?.innerText ||
+              iframe?.contentDocument?.body?.textContent ||
+              ""
+            ).replace(/\s+/g, "").length;
+          } catch {
+            // 跨域不可访问：不干预原判定
+          }
+          if (textLen >= 0 && textLen < 80) {
+            epubDiag("EMPTY_FIRST_PAGE", `len=${textLen}; skip to first content chapter`);
+            state = false;
+          }
+        }
         if (state !== false) {
           failOnDisplayError = false; // 位置恢复的 display 失败只降级，不判整本失败
           const r0 = resumeRef.current;
