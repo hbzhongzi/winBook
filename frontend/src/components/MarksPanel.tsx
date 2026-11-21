@@ -112,9 +112,26 @@ export default function MarksPanel({
     return marks.filter((m) => m.color === f).length;
   };
 
-  // D92：面板挂载/卸载打点——确认「按钮 active 但面板看不到」是渲染问题还是层叠遮挡
+  // D92/D93：面板挂载/卸载打点——确认「按钮 active 但面板看不到」是渲染问题还是层叠遮挡
   useEffect(() => {
     epubDiag("MARK_PANEL_MOUNT", `marks=${marks.length}`);
+    // D93：直接量面板几何 + 命中测试，区分「布局挤出视口」与「被 iframe 合成层遮挡」
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(".marks-panel");
+      const r = el?.getBoundingClientRect();
+      if (!r || !el) {
+        epubDiag("MARK_PANEL_RECT", "no element");
+        return;
+      }
+      const cs = getComputedStyle(el);
+      const cx = Math.round(r.left + r.width / 2);
+      const cy = Math.round(r.top + r.height / 2);
+      const top = document.elementFromPoint(cx, cy) as HTMLElement | null;
+      epubDiag(
+        "MARK_PANEL_RECT",
+        `x=${Math.round(r.left)} y=${Math.round(r.top)} w=${Math.round(r.width)} h=${Math.round(r.height)} vis=${cs.visibility} z=${cs.zIndex} hit=${top?.className || top?.tagName || "none"}`
+      );
+    });
     return () => epubDiag("MARK_PANEL_UNMOUNT", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

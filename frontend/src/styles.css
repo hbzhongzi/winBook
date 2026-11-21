@@ -1640,6 +1640,9 @@ g.mark-hl.mark-flash { animation: markRingSvg 1.6s ease; }
      与 mark-toolbar(1002)/bubble(1003) 同法提到最上层，确保面板可见可点。 */
   position: relative;
   z-index: 1004;
+  /* D93：iframe 靠 translateZ(0) 成为合成层才盖住面板；面板也提升为合成层，
+     让两者处于同一合成栈按 z-index 正确排序（单纯 position/z-index 不足以对抗合成层）。 */
+  transform: translateZ(0);
   border-left: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
