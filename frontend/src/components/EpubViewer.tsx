@@ -1001,9 +1001,13 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     let unwireScroll: (() => void) | null = null;
 
     (async () => {
-      // displayError 仅在初始显示阶段触发失败：用户主动点击无效目录项时
+      // displayError 仅在「初始首章显示」阶段触发失败：用户主动点击无效目录项时
       // 由 jump() 自行吞掉拒绝，不整本书判定失败。
+      // failOnDisplayError 进一步把「阅读位置恢复」的 display 排除在失败判定外：
+      // applyResume 内部已有 CFI→href 降级 / 失败停在首章的处理（见下），
+      // 其 display 若触发 displayError 只应降级，不能升级为整本解析失败（D76）。
       let initialPhase = true;
+      let failOnDisplayError = true;
 
       try {
         const bytes = base64ToUint8Array(dataBase64);
@@ -1095,7 +1099,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         // displayError：section 加载失败时 epubjs 只抛事件、display() 永久挂起，
         // 监听后立即失败，不必等超时（实测：部分真实书触发此路径）。
         rendition.on?.("displayError", () => {
-          if (initialPhase) fail();
+          if (initialPhase && failOnDisplayError) fail();
         });
 
         // 必须等 book.opened，不能只等 loaded.navigation：
@@ -1522,7 +1526,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
         let state = await settleAndCheck(container, rendition, true);
         if (destroyed) return;
         if (state !== false) {
+          failOnDisplayError = false; // 位置恢复的 display 失败只降级，不判整本失败
           await applyResume();
+          failOnDisplayError = true;
           if (destroyed) return;
           initialPhase = false;
           return; // 有内容 / 无法判定 → 接受
@@ -1552,7 +1558,9 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
           state = await settleAndCheck(container, rendition, false);
           if (destroyed) return;
           if (state !== false) {
+            failOnDisplayError = false; // 同上：跳章后的位置恢复 display 失败只降级
             await applyResume();
+            failOnDisplayError = true;
             if (destroyed) return;
             initialPhase = false;
             return;

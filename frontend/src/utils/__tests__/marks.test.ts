@@ -160,6 +160,20 @@ describe("marks v1：normalizeMark 定位器与字段", () => {
     expect(normalizeMark(rawMark({ locator: { kind: "epub", cfi: "" } }))).toBeNull();
   });
 
+  it("epub 独立想法：无 cfi 时补占位 cfi 而非丢弃（D77）", () => {
+    const m = normalizeMark(
+      rawMark({ idea: true, locator: { kind: "epub", cfi: "", href: "", chapter: "" } })
+    );
+    expect(m).not.toBeNull();
+    expect(m!.idea).toBe(true);
+    expect(m!.locator.kind).toBe("epub");
+    if (m!.locator.kind === "epub") expect(m!.locator.cfi).toBe("epubcfi(/)");
+  });
+
+  it("epub 划词标记（非 idea）缺 cfi 仍拒绝", () => {
+    expect(normalizeMark(rawMark({ idea: false, locator: { kind: "epub", cfi: "" } }))).toBeNull();
+  });
+
   it("txt 定位器：越界 start 钳制到 0", () => {
     const m = normalizeMark(rawMark({ locator: { kind: "txt", start: -5, end: 3 } }));
     expect(m!.locator).toEqual({ kind: "txt", start: 0, end: 3 });

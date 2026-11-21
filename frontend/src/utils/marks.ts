@@ -101,7 +101,22 @@ export function normalizeMark(raw: unknown): Mark | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.bookPath !== "string" || !r.bookPath) return null;
-  const locator = normalizeLocator(r.locator);
+  let locator = normalizeLocator(r.locator);
+  // 独立想法（idea=true）不依赖选区定位（§4.10）：EPUB 完全无实时位置时
+  // ideaLocator 只能给空 cfi，而 normalizeLocator 拒绝空 cfi，会让想法条目
+  // 在 loadMarks 时被整条丢弃——表现为「写想法后保存成功、面板仍 0 条」（D77）。
+  // 这里仅为 idea 条目补一个合法占位 cfi；划词标记仍要求真实 cfi（既有校验口径不变）。
+  if (!locator && r.idea === true && r.locator && typeof r.locator === "object") {
+    const l = r.locator as Record<string, unknown>;
+    if (l.kind === "epub") {
+      locator = {
+        kind: "epub",
+        cfi: typeof l.cfi === "string" && l.cfi ? l.cfi : "epubcfi(/)",
+        href: typeof l.href === "string" ? l.href : "",
+        chapter: typeof l.chapter === "string" ? l.chapter : "",
+      };
+    }
+  }
   if (!locator) return null;
   const text = typeof r.text === "string" ? r.text.slice(0, MAX_TEXT) : "";
   const note = typeof r.note === "string" ? r.note.slice(0, MAX_TEXT) : "";
