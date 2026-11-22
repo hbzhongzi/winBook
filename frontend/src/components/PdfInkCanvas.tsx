@@ -47,8 +47,14 @@ export type InkCanvasProps = {
   pageW: number;
   pageH: number;
   tool: InkTool;
-  /** 笔迹变化：落笔结束 / 擦除时回调（上层负责存入草稿或落库） */
+  /** 笔迹变化：落笔结束时回调（上层负责存入草稿或落库） */
   onStrokesChange: (next: PdfStroke[]) => void;
+  /** D113：擦除开始（上层记录擦除前页快照） */
+  onEraseBegin?: () => void;
+  /** D113：擦除结果——与落笔分流，上层据此把已落库笔迹移出并写入擦除后草稿 */
+  onEraseStrokesChange?: (next: PdfStroke[]) => void;
+  /** D113：一次擦除拖拽结束（上层提交擦除历史） */
+  onEraseCommit?: () => void;
   /** 画布 ref 登记（供命中测试/截图等外部使用） */
   canvasRefOut?: MutableRefObject<HTMLCanvasElement | null>;
 };
@@ -63,6 +69,9 @@ export default function InkCanvas({
   pageH,
   tool,
   onStrokesChange,
+  onEraseBegin,
+  onEraseStrokesChange,
+  onEraseCommit,
   canvasRefOut,
 }: InkCanvasProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
@@ -74,8 +83,28 @@ export default function InkCanvas({
   const erasingRef = useRef(false);
 
   // 最新 props 镜像：指针事件回调里读，避免闭包陈旧
-  const latest = useRef({ strokes, draftStrokes, pageW, pageH, tool, onStrokesChange });
-  latest.current = { strokes, draftStrokes, pageW, pageH, tool, onStrokesChange };
+  const latest = useRef({
+    strokes,
+    draftStrokes,
+    pageW,
+    pageH,
+    tool,
+    onStrokesChange,
+    onEraseBegin,
+    onEraseStrokesChange,
+    onEraseCommit,
+  });
+  latest.current = {
+    strokes,
+    draftStrokes,
+    pageW,
+    pageH,
+    tool,
+    onStrokesChange,
+    onEraseBegin,
+    onEraseStrokesChange,
+    onEraseCommit,
+  };
 
   const allStrokes = useCallback(
     () => [...latest.current.strokes, ...latest.current.draftStrokes],
@@ -200,6 +229,8 @@ export default function InkCanvas({
 
     if (t.brush === "eraser") {
       erasingRef.current = true;
+      // D113：擦除前先让上层记录页快照，撤销/恢复才有「擦除前」可回
+      latest.current.onEraseBegin?.();
       eraseAt(p.x, p.y);
       return;
     }
@@ -261,6 +292,8 @@ export default function InkCanvas({
     }
     if (erasingRef.current) {
       erasingRef.current = false;
+      // D113：一次擦除拖拽结束，提交「擦除前 → 擦除后」历史条目
+      latest.current.onEraseCommit?.();
       return;
     }
     finishStroke();
@@ -276,7 +309,12 @@ export default function InkCanvas({
     if (all.length === 0) return;
     // D107：橡皮半径跟随工具栏调节（钳制防手改状态越界）
     const next = eraseStrokesAt(all, x, y, clampEraserSize(t.eraserSize), w, h);
-    if (next !== all) latest.current.onStrokesChange(next);
+    if (next !== all) {
+      // D113：擦除结果与落笔分流——上层据此把已落库笔迹移出该页，
+      // 避免「原笔迹 + 擦除后草稿」两套笔迹叠加显示。
+      const apply = latest.current.onEraseStrokesChange ?? latest.current.onStrokesChange;
+      apply(next);
+    }
   };
 
   const curTool = latest.current.tool;

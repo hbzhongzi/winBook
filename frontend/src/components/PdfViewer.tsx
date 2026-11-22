@@ -18,6 +18,13 @@ import {
   visiblePages,
   type InkRedoEntry,
 } from "../utils/pdfInkUndo";
+import {
+  createErasedSnapshot,
+  pushEraseEntry,
+  samePageSnapshot,
+  type InkEraseEntry,
+  type InkPageSnapshot,
+} from "../utils/inkHistory";
 import type { PdfStroke } from "../utils/marks";
 import { BRUSH_ALPHA, ERASER_RADIUS } from "../utils/pdfInk";
 import { PDF_INK_COLORS, PDF_INK_HEX, type PdfBrush, type PdfInkColor } from "../utils/marks";
@@ -788,8 +795,15 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   });
   /** 每页草稿笔迹：page → strokes（落笔画完即入草稿，点「保存」才落库） */
   const [inkDrafts, setInkDrafts] = useState<Record<number, PdfStroke[]>>({});
-  /** D106：撤销栈——保存被撤的一步，供「恢复」反向执行；新落笔/保存/清空时作废 */
+  /** D106：增删式撤销栈（撤最后一笔）；D113：擦除改走独立的快照历史 */
   const [inkRedo, setInkRedo] = useState<InkRedoEntry[]>([]);
+  /** D113：擦除快照历史——一次擦除拖拽 = 一条，优先于增删式撤销 */
+  const [eraseUndo, setEraseUndo] = useState<InkEraseEntry[]>([]);
+  const [eraseRedo, setEraseRedo] = useState<InkEraseEntry[]>([]);
+  const eraseStartRef = useRef<InkPageSnapshot | null>(null);
+  const eraseDirtyRef = useRef(false);
+  /** 草稿的同步镜像：擦除提交需在同一次事件里读到最新值（React state 尚未提交） */
+  const inkDraftsRef = useRef<Record<number, PdfStroke[]>>(inkDrafts);
   /** 画布页面尺寸（随 canvas 渲染结果回填，画笔层据此对齐） */
   const [inkBox, setInkBox] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
@@ -808,17 +822,70 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   );
 
   const setDraftFor = useCallback((page: number, strokes: PdfStroke[]) => {
-    setInkDrafts((prev) => ({ ...prev, [page]: strokes }));
+    const nextDrafts = { ...inkDraftsRef.current, [page]: strokes };
+    inkDraftsRef.current = nextDrafts;
+    setInkDrafts(nextDrafts);
   }, []);
 
-  /** 新落笔/擦除：写入草稿并作废 redo 栈（D106：新操作后不能再恢复旧撤销） */
+  /** D113：某页笔迹快照（草稿 + 已落库标记） */
+  const snapshotPage = useCallback((page: number): InkPageSnapshot => {
+    const ctx = marksCtxRef.current;
+    const saved: InkPageSnapshot["saved"] = [];
+    for (const m of ctx?.marks ?? []) {
+      if (m.locator.kind !== "pdf" || m.locator.page !== page) continue;
+      const s = m.locator.strokes;
+      if (s && s.length) saved.push({ color: m.color, strokes: s });
+    }
+    return { page, drafts: inkDraftsRef.current[page] ?? [], saved };
+  }, []);
+
+  /** D113：擦除开始——记下擦除前的页快照 */
+  const onInkEraseBegin = useCallback(
+    (page: number) => {
+      eraseStartRef.current = snapshotPage(page);
+      eraseDirtyRef.current = false;
+    },
+    [snapshotPage]
+  );
+
+  /** 新落笔写入草稿；擦除（D113）首次擦到时把已落库笔迹移出标记，避免与草稿叠加重复 */
   const onInkStrokesChange = useCallback(
-    (page: number, next: PdfStroke[]) => {
+    (page: number, next: PdfStroke[], erasing = false) => {
+      if (erasing) {
+        if (!eraseDirtyRef.current) {
+          eraseDirtyRef.current = true;
+          const ctx = marksCtxRef.current;
+          for (const m of [...(ctx?.marks ?? [])]) {
+            if (m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0) {
+              ctx?.onDelete(m.id);
+            }
+          }
+        }
+      }
       setDraftFor(page, next);
       setInkRedo([]);
+      // D113：新落笔属于「之后的操作」，擦除历史作废——与 D106「新操作后不能再恢复旧撤销」同口径。
+      // 否则「擦除 → 再画一笔 → 撤销」会优先回退擦除，把刚画的笔迹一起覆盖掉。
+      if (!erasing) {
+        setEraseUndo([]);
+        setEraseRedo([]);
+      }
     },
     [setDraftFor]
   );
+
+  /** D113：擦除拖拽结束——有实际变化才压入快照历史 */
+  const onInkEraseCommit = useCallback((page: number) => {
+    const before = eraseStartRef.current;
+    const dirty = eraseDirtyRef.current;
+    eraseStartRef.current = null;
+    eraseDirtyRef.current = false;
+    if (!before || !dirty) return;
+    const after = createErasedSnapshot(page, inkDraftsRef.current[page] ?? []);
+    if (samePageSnapshot(before, after)) return;
+    setEraseUndo((prev) => pushEraseEntry(prev, { before, after }));
+    setEraseRedo([]);
+  }, []);
 
   /** 草稿是否有未保存内容（工具栏显示「保存」高亮） */
   const inkDirty = Object.values(inkDrafts).some((s) => s.length > 0);
@@ -839,9 +906,57 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     [inkStrokesOf]
   );
 
+  /** D113：恢复擦除前快照——重建被移出的已落库标记 + 还原草稿 */
+  const restoreEraseBefore = useCallback(
+    (snap: InkPageSnapshot) => {
+      const ctx = marksCtxRef.current;
+      for (const m of snap.saved) {
+        const exists = ctx?.marks.some(
+          (x) =>
+            x.locator.kind === "pdf" &&
+            x.locator.page === snap.page &&
+            x.color === m.color &&
+            x.locator.strokes?.length === m.strokes.length &&
+            x.locator.strokes.every((s, i) => s === m.strokes[i])
+        );
+        if (!exists) {
+          ctx?.onAdd({
+            color: m.color,
+            text: "",
+            locator: { kind: "pdf", page: snap.page, quote: "", strokes: m.strokes },
+          });
+        }
+      }
+      setDraftFor(snap.page, snap.drafts);
+    },
+    [setDraftFor]
+  );
+
+  /** D113：重新应用擦除后状态（恢复按钮）——移出已落库笔迹 + 写回擦除后草稿 */
+  const applyEraseAfter = useCallback(
+    (snap: InkPageSnapshot) => {
+      const ctx = marksCtxRef.current;
+      for (const m of [...(ctx?.marks ?? [])]) {
+        if (m.locator.kind === "pdf" && m.locator.page === snap.page && (m.locator.strokes?.length ?? 0) > 0) {
+          ctx?.onDelete(m.id);
+        }
+      }
+      setDraftFor(snap.page, snap.drafts);
+    },
+    [setDraftFor]
+  );
+
   /** 撤销：在可见页里找草稿最多的页（右页优先），撤它最后一笔；再退到已落库笔迹。
-   *  D106：被撤的一步压入 redo 栈，供「恢复」反向执行。 */
+   *  D106：被撤的一步压入 redo 栈；D113：擦除优先走快照历史。 */
   const undoInk = useCallback(() => {
+    // D113：擦除是内容修改，不能用 popLastDraft 撤「最后一笔」，优先按快照回退
+    if (eraseUndo.length > 0) {
+      const entry = eraseUndo[eraseUndo.length - 1];
+      restoreEraseBefore(entry.before);
+      setEraseUndo((prev) => prev.slice(0, -1));
+      setEraseRedo((prev) => [...prev, entry]);
+      return;
+    }
     const ctx = marksCtxRef.current;
     const pages = inkPages();
     const target = undoTargetPage(
@@ -876,10 +991,18 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     } else {
       ctx.onDelete(last.id);
     }
-  }, [inkPages, inkDrafts, inkStrokesOf, setDraftFor]);
+  }, [eraseUndo, restoreEraseBefore, inkPages, inkDrafts, inkStrokesOf, setDraftFor]);
 
   /** 恢复（D106）：反向执行最近一次撤销；已落库标记若在撤销时被删则按记录重建 */
   const redoInk = useCallback(() => {
+    // D113：优先恢复擦除历史
+    if (eraseRedo.length > 0) {
+      const entry = eraseRedo[eraseRedo.length - 1];
+      applyEraseAfter(entry.after);
+      setEraseRedo((prev) => prev.slice(0, -1));
+      setEraseUndo((prev) => [...prev, entry]);
+      return;
+    }
     const entry = inkRedo[inkRedo.length - 1];
     if (!entry) return;
     if (entry.kind === "draft") {
@@ -900,13 +1023,15 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
       });
     }
     setInkRedo((prev) => prev.slice(0, -1));
-  }, [inkRedo, inkDrafts, setDraftFor]);
+  }, [eraseRedo, applyEraseAfter, inkRedo, inkDrafts, setDraftFor]);
 
   /** 清空可见页画笔（草稿 + 已落库该页笔迹标记） */
   const clearInkPage = useCallback(() => {
     const ctx = marksCtxRef.current;
     const pages = inkPages();
     setInkRedo([]); // D106：清空是不可逆操作，redo 栈作废
+    setEraseUndo([]); // D113：擦除历史一并作废
+    setEraseRedo([]);
     for (const page of pages) {
       setDraftFor(page, []);
       if (!ctx) continue;
@@ -923,6 +1048,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     const ctx = marksCtxRef.current;
     if (!ctx) return;
     setInkRedo([]); // D106：落库后历史作废，避免恢复到已保存的旧状态
+    setEraseUndo([]); // D113：擦除快照在落库后失效
+    setEraseRedo([]);
     const pages = Object.keys(inkDrafts)
       .map(Number)
       .filter((p) => (inkDrafts[p]?.length ?? 0) > 0)
@@ -942,6 +1069,7 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
         });
       }
     }
+    inkDraftsRef.current = {};
     setInkDrafts({});
     setInkTool((t) => ({ ...t, active: false }));
   }, [inkDrafts]);
@@ -1201,6 +1329,9 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
                         pageH={heights[i] || ESTIMATE_H}
                         tool={inkTool}
                         onStrokesChange={(next) => onInkStrokesChange(i + 1, next)}
+                        onEraseBegin={() => onInkEraseBegin(i + 1)}
+                        onEraseStrokesChange={(next) => onInkStrokesChange(i + 1, next, true)}
+                        onEraseCommit={() => onInkEraseCommit(i + 1)}
                       />
                     </>
                   ) : (
@@ -1250,8 +1381,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
             tool={inkTool}
             draftCount={inkDraftTotal}
             canClear={canClearInk([scrollCurrent], (p) => inkDrafts[p]?.length ?? 0, inkHasSaved)}
-            canUndo={canUndoInk([scrollCurrent], (p) => inkDrafts[p]?.length ?? 0, inkHasSaved)}
-            canRedo={canRedoInk(inkRedo)}
+            canUndo={canUndoInk([scrollCurrent], (p) => inkDrafts[p]?.length ?? 0, inkHasSaved) || eraseUndo.length > 0}
+            canRedo={canRedoInk(inkRedo) || eraseRedo.length > 0}
             onChange={(patch) => setInkTool((t) => ({ ...t, ...patch }))}
             onUndo={undoInk}
             onRedo={redoInk}
@@ -1295,6 +1426,9 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
                   pageH={inkBox.h}
                   tool={inkTool}
                   onStrokesChange={(next) => onInkStrokesChange(current, next)}
+                  onEraseBegin={() => onInkEraseBegin(current)}
+                  onEraseStrokesChange={(next) => onInkStrokesChange(current, next, true)}
+                  onEraseCommit={() => onInkEraseCommit(current)}
                 />
               </div>
               <div className="pdf-page-cell">
@@ -1312,6 +1446,9 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
                   pageH={inkBox.h}
                   tool={inkTool}
                   onStrokesChange={(next) => onInkStrokesChange(current + 1, next)}
+                  onEraseBegin={() => onInkEraseBegin(current + 1)}
+                  onEraseStrokesChange={(next) => onInkStrokesChange(current + 1, next, true)}
+                  onEraseCommit={() => onInkEraseCommit(current + 1)}
                 />
               </div>
             </>
@@ -1331,6 +1468,9 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
                 pageH={inkBox.h}
                 tool={inkTool}
                 onStrokesChange={(next) => onInkStrokesChange(current, next)}
+                onEraseBegin={() => onInkEraseBegin(current)}
+                onEraseStrokesChange={(next) => onInkStrokesChange(current, next, true)}
+                onEraseCommit={() => onInkEraseCommit(current)}
               />
             </>
           )}
@@ -1347,12 +1487,14 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
             (p) => inkDrafts[p]?.length ?? 0,
             inkHasSaved
           )}
-          canUndo={canUndoInk(
-            visiblePages(current, settings.pdfColumns),
-            (p) => inkDrafts[p]?.length ?? 0,
-            inkHasSaved
-          )}
-          canRedo={canRedoInk(inkRedo)}
+          canUndo={
+            canUndoInk(
+              visiblePages(current, settings.pdfColumns),
+              (p) => inkDrafts[p]?.length ?? 0,
+              inkHasSaved
+            ) || eraseUndo.length > 0
+          }
+          canRedo={canRedoInk(inkRedo) || eraseRedo.length > 0}
           onChange={(patch) => setInkTool((t) => ({ ...t, ...patch }))}
           onUndo={undoInk}
           onRedo={redoInk}
