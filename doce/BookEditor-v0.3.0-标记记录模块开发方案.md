@@ -1,7 +1,7 @@
 # BookEditor v0.3.0 —— 标记记录模块 开发方案
 
 > 状态：**T1–T12 实施完成 + D76–D105 真机反馈修复、体验增强与静态审查修正**（2026-11-22）。
-> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`，D100 = `13a4ab3`，D101 = `9c74ae1`，D102 = `c0bd409`，D103 = `c5c2bb6`，D104 = `39c909f`，D105 = `待回填`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
+> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`，D100 = `13a4ab3`，D101 = `9c74ae1`，D102 = `c0bd409`，D103 = `c5c2bb6`，D104 = `39c909f`，D105 = `24a7785`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
 > 验证：`tsc --noEmit` PASS；`vitest run` **286 例全绿**（marks 58 例，含 D76/D77 回归 2 例、D96 章节组织 5 例、D101 画笔数据 8 例；`pdfInk.test.ts` 21 例覆盖坐标缩放/采样/抽稀/橡皮擦命中/页内位置；`markDrag.test.ts` 6 例；D102 新增 `pdfScale.test.ts` 栏数解耦 4 例 + `settings.test.ts` `pdfColumns` 迁移 2 例；D103 新增 `pdfScale.test.ts` 双栏倍率基准 4 例；`epubHighlight.test.ts` D105 改写为 11 例（过滤方向反转：丢容器框留逐行框）；**D105 新增 `pdfInkUndo.test.ts` 7 例**（双栏撤销页范围）；D104 移除被弃用的 `toSvgRect` 及其 2 例）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D105.exe`）。A83–A105 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。**D89 翻页划词工具条、D95 弹窗视觉、D98 悬停/右键、D100 双模式悬停与滚动选词、D101 PDF 画笔、D102 三项、D103 两项、D104 高亮坐标系、D105 两项（高亮颜色/容器框 + 双栏撤销），均待用户真机确认后方可标为通过。**
 > 取证通道：D87 起 EPUB 诊断自动节流落盘到 exe 同目录 `epub-diag.log`（`utils/epubDiag.ts` + Go `DiagLogPath()`/`WriteDiagLog()`），不再依赖点按钮；D76–D95 全部修复均据该日志定位。
 > 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互；**§4.11 面板形态已由 D95 改为弹窗浮层，HTML 基线此点未同步更新**）。
@@ -297,7 +297,7 @@ markDefaultColor: MarkColor;
 
 | T15 | D104 静态审查修正：高亮重画改用原 render 坐标系 | tsc/vitest/build 全过 + 真机不偏移 | 🔶 代码完成并提交 `39c909f`，交付 `build/bin/book-editor-D104.exe`；vitest 279→**277 例全绿**（移除 D103 弃用的 `toSvgRect` 2 例，过滤逻辑 9 例保留）；**真机待确认**：A102 高亮逐行贴合且**位置不整体偏移** |
 
-| T16 | D105 真机反馈修复：EPUB 高亮颜色/容器框 + PDF 双栏撤销口径 | tsc/vitest/build 全过 + 真机视觉确认 | 🔶 代码完成，交付 `build/bin/book-editor-D105.exe`；vitest 277→**286 例全绿**（`epubHighlight.test.ts` 改为 11 例、新增 `pdfInkUndo.test.ts` 7 例）；**真机待确认**：高亮颜色非灰、无横溢容器框、双栏撤销/清空可用 |
+| T16 | D105 真机反馈修复：EPUB 高亮颜色/容器框 + PDF 双栏撤销口径 | tsc/vitest/build 全过 + 真机视觉确认 | 🔶 代码完成并提交 `24a7785`，交付 `build/bin/book-editor-D105.exe`；vitest 277→**286 例全绿**（`epubHighlight.test.ts` 改为 11 例、新增 `pdfInkUndo.test.ts` 7 例）；**真机待确认**：高亮颜色非灰、无横溢容器框、双栏撤销/清空可用 |
 
 **DoD**：`tsc --noEmit` PASS ✅、`vitest run` 286 例全绿（marks 58 + pdfInk 21 + pdfInkUndo 7 + pdfScale 34 + settings 50 + epubHighlight 11 + markDrag 6 + 其余 99）✅、`go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅（最新交付 `book-editor-D105.exe`）、本文 §6/§7/§8 回填至 D105 ✅、D95 弹窗用户确认 ⏳、D89 翻页划词真机验证 ⏳、D98 悬停/右键真机 ⏳、D100 双模式悬停与滚动选词真机 ⏳、D101 PDF 画笔真机 ⏳、D102 三项（A99–A101）真机 ⏳、D103 两项（A102–A103）真机 ⏳、D104 高亮坐标系（A102）真机 ⏳、D105 两项（A102 颜色/容器框、A104 双栏撤销）真机 ⏳、A83–A105 其余真机通过 ⏳、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D105 ⏳（下一步，未在本版范围）。
 
