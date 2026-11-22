@@ -303,7 +303,7 @@ markDefaultColor: MarkColor;
 
 | T16 | D105 真机反馈修复：EPUB 高亮颜色/容器框 + PDF 双栏撤销口径 | tsc/vitest/build 全过 + 真机视觉确认 | 🔶 代码完成并提交 `24a7785`，交付 `build/bin/book-editor-D105.exe`；vitest 277→**286 例全绿**（`epubHighlight.test.ts` 改为 11 例、新增 `pdfInkUndo.test.ts` 7 例）；**真机待确认**：高亮颜色非灰、无横溢容器框、双栏撤销/清空可用 |
 
-| T17 | D106 三项：PDF 画笔恢复 + PDF 默认翻页双栏 + EPUB 滚动模式划词修复 | tsc/vitest/build 全过 + 真机确认 | 🔶 代码完成，交付 `build/bin/book-editor-D106.exe`；vitest 286→**294 例全绿**（`pdfInkUndo.test.ts` +4、`settings.test.ts` +4）；**真机待确认**：A105 恢复可用、A106 PDF 默认翻页双栏、A107 滚动划词弹工具条 |
+| T17 | D106 三项：PDF 画笔恢复 + PDF 默认翻页双栏 + EPUB 滚动模式划词修复 | tsc/vitest/build 全过 + 真机确认 | 🔶 代码完成并提交 `7937f17`，交付 `build/bin/book-editor-D106.exe`；vitest 286→**294 例全绿**（`pdfInkUndo.test.ts` +4、`settings.test.ts` +4）；**真机待确认**：A105 恢复可用、A106 PDF 默认翻页双栏、A107 滚动划词弹工具条 |
 
 **DoD**：`tsc --noEmit` PASS ✅、`vitest run` 294 例全绿（marks 58 + pdfInk 21 + pdfInkUndo 11 + pdfScale 34 + settings 54 + epubHighlight 11 + markDrag 6 + 其余 99）✅、`go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅（最新交付 `book-editor-D106.exe`）、本文 §6/§7/§8 回填至 D106 ✅、D95 弹窗用户确认 ⏳、D89 翻页划词真机验证 ⏳、D98 悬停/右键真机 ⏳、D100 双模式悬停与滚动选词真机 ⏳、D101 PDF 画笔真机 ⏳、D102 三项（A99–A101）真机 ⏳、D103 两项（A102–A103）真机 ⏳、D104 高亮坐标系（A102）真机 ⏳、D105 两项（A102 颜色/容器框、A104 双栏撤销）真机 ⏳、D106 三项（A105 恢复 / A106 默认翻页双栏 / A107 滚动划词）真机 ⏳、A83–A107 其余真机通过 ⏳、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D106 ⏳（下一步，未在本版范围）。
 
