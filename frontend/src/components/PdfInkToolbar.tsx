@@ -40,8 +40,12 @@ type Props = {
   /** 当前页是否已有笔迹（决定「清空本页」是否可用） */
   canClear: boolean;
   canUndo: boolean;
+  /** D106：是否有可恢复的一步（撤销后才可用） */
+  canRedo: boolean;
   onChange: (patch: Partial<InkTool>) => void;
   onUndo: () => void;
+  /** D106：恢复最近一次撤销 */
+  onRedo: () => void;
   onClearPage: () => void;
   onSave: () => void;
   onClose: () => void;
@@ -52,8 +56,10 @@ export default function PdfInkToolbar({
   draftCount,
   canClear,
   canUndo,
+  canRedo,
   onChange,
   onUndo,
+  onRedo,
   onClearPage,
   onSave,
   onClose,
@@ -128,8 +134,17 @@ export default function PdfInkToolbar({
 
       <div className="ib-sep" />
       <div className="ib-group">
-        <button type="button" className="ib-btn" disabled={!canUndo} onClick={onUndo} title="撤销上一笔（本页）">
+        <button type="button" className="ib-btn" disabled={!canUndo} onClick={onUndo} title="撤销上一笔（双栏可见页内，右页优先）">
           撤销
+        </button>
+        <button
+          type="button"
+          className="ib-btn"
+          disabled={!canRedo}
+          onClick={onRedo}
+          title="恢复刚才撤销的一笔"
+        >
+          恢复
         </button>
         <button
           type="button"

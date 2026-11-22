@@ -12,6 +12,36 @@
 //
 // 「撤销」语义：在可见页范围内，从最大的页开始找有草稿的页，撤它的最后一笔；
 // 若可见页都无草稿，则找已落库笔迹的页（调用方通过 hasSaved 回调判定）。
+//
+// D106 追加「恢复」（redo）：撤销时把被撤的一步压栈，恢复时反向执行。
+// 草稿笔直接加回草稿栈；已落库笔迹整组写回（标记被删则用记录的颜色/页码重建）。
+
+import type { MarkColor, PdfStroke } from "./marks";
+
+/** 撤销后可恢复的一步 */
+export type InkRedoEntry =
+  | { kind: "draft"; page: number; stroke: PdfStroke }
+  | {
+      kind: "saved";
+      page: number;
+      markId: string;
+      /** 撤销前的完整笔迹（恢复时整组写回，避免中间态） */
+      strokes: PdfStroke[];
+      color: MarkColor;
+    };
+
+/** 是否还有可恢复的一步 */
+export function canRedoInk(entries: InkRedoEntry[]): boolean {
+  return entries.length > 0;
+}
+
+/** 取草稿栈最后一笔；空栈返回 null（撤销/恢复的原子步骤） */
+export function popLastDraft(
+  strokes: PdfStroke[]
+): { rest: PdfStroke[]; last: PdfStroke } | null {
+  if (!strokes || strokes.length === 0) return null;
+  return { rest: strokes.slice(0, -1), last: strokes[strokes.length - 1] };
+}
 
 /** 当前可见页集合：双栏含右页 current+1 */
 export function visiblePages(current: number, columns: 1 | 2): number[] {

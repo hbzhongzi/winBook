@@ -619,7 +619,10 @@ function bindStageMarks(
     onHover: (id: string | null, clientX: number, clientY: number) => void;
   }
 ): () => void {
-  let down: { x: number; y: number } | null = null;
+  // D106：记录按下时命中的 iframe 本身，而不只是坐标。滚动模式多章节 iframe
+  // 纵向堆叠，若 mouseup 时重新按坐标查找，可能命中另一个 iframe（或回收中的空壳），
+  // start/end 就处于不同坐标系，caretRangeFromPoint 会落到错误位置甚至返回 null。
+  let down: { x: number; y: number; iframe: HTMLIFrameElement } | null = null;
   const cleanups: (() => void)[] = [];
 
   /**
@@ -657,7 +660,7 @@ function bindStageMarks(
     }
     const p = iframeContentPoint(iframe, ev);
     if (!p) return;
-    down = { x: p.x, y: p.y };
+    down = { x: p.x, y: p.y, iframe };
   };
 
   // D98：右键高亮 → 编辑/删除菜单；未命中高亮时不拦截（保留原生菜单）
@@ -684,8 +687,10 @@ function bindStageMarks(
       epubDiag("DRAG_UP_NOSTART", `x=${ev.clientX} y=${ev.clientY}`);
       return;
     }
-    const iframe = iframeAtPoint(stage, ev.clientX, ev.clientY);
-    if (!iframe) return;
+    // D106：复用 mousedown 时命中的 iframe 换算终点，保证 start/end 同一坐标系。
+    // 旧实现在此重新 iframeAtPoint(ev)，滚动模式多 iframe 堆叠时可能命中另一章节，
+    // 于是 caretRangeFromPoint 拿到的两端不在同一文档 → 静默返回（工具条不弹）。
+    const iframe = start.iframe;
     let doc: Document | null = null;
     try {
       doc = iframe.contentDocument;
@@ -700,13 +705,21 @@ function bindStageMarks(
     const isDrag = isMarkDrag(dx, dy);
     // D100 诊断：滚动模式选不中时先看这条——dx/dy 是否达到判定门槛。
     // 没有这条日志 = mousedown 没命中 iframe（见 DRAG_DOWN_NOIFRAME / DRAG_UP_NOSTART）。
-    epubDiag("DRAG_UP", `dx=${Math.round(dx)} dy=${Math.round(dy)} isDrag=${isDrag}`);
+    epubDiag(
+      "DRAG_UP",
+      `dx=${Math.round(dx)} dy=${Math.round(dy)} isDrag=${isDrag} sy=${Math.round(start.y)} ey=${Math.round(end.y)}`
+    );
     if (isDrag) {
       // 拖拽选词：两端 caret → Range（坐标均为 iframe 文档内坐标）
       const a = caretRangeAt(doc, start.x, start.y);
       const b = caretRangeAt(doc, end.x, end.y);
+      epubDiag("DRAG_CARET", `a=${a ? 1 : 0} b=${b ? 1 : 0}`);
       const range = a && b ? rangeBetween(doc, a, b) : null;
-      if (!range) return;
+      if (!range) {
+        epubDiag("DRAG_RANGE_NULL", "");
+        return;
+      }
+      epubDiag("DRAG_RANGE_OK", `len=${range.toString().length}`);
       // 回填选区：提供原生选中视觉。epubjs 的 selectionchange 监听会因此收到
       // SELECTED 事件，但滚动模式不注册 selected 处理器，无副作用。
       try {
@@ -1020,10 +1033,15 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     const text = range.toString();
     if (text.trim().length < MARK_SELECT_MIN || !ctx?.enabled) {
       // 低于阈值 / 总开关关闭：不弹工具条（既有高亮照常显示，§3.3）
+      epubDiag(
+        "SELECT_DROP",
+        `reason=${text.trim().length < MARK_SELECT_MIN ? "short" : "disabled"} len=${text.length} enabled=${!!ctx?.enabled}`
+      );
       setToolbar(null);
       return;
     }
     if (!cfi) {
+      epubDiag("SELECT_DROP", "reason=cfi");
       setToolbar(null);
       return;
     }
@@ -1691,19 +1709,34 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               onHover: scheduleHover,
               onDragSelect: (doc, range) => {
                 // cfi 由所在视图的 Contents 反算（epub.js 6571）
-                const contents = renditionRef.current?.views?.().find((v) => {
+                let contents = renditionRef.current?.views?.().find((v) => {
                   try {
                     return v.contents?.document === doc;
                   } catch {
                     return false;
                   }
                 })?.contents;
+                // D106 fallback：doc 可能来自回收中的旧 iframe，改用 range 实际所属文档再找一次
+                if (!contents) {
+                  const owner = range.startContainer.ownerDocument;
+                  contents = renditionRef.current?.views?.().find((v) => {
+                    try {
+                      return v.contents?.document === owner;
+                    } catch {
+                      return false;
+                    }
+                  })?.contents;
+                }
                 let cfi: string | null = null;
                 try {
                   cfi = contents?.cfiFromRange?.(range) ?? null;
                 } catch {
                   cfi = null;
                 }
+                epubDiag(
+                  "DRAG_CFI",
+                  `len=${range.toString().length} contents=${contents ? 1 : 0} cfi=${cfi ? 1 : 0}`
+                );
                 handleSelection(doc, range, cfi);
               },
               onMarkMenu: (id, x, y) => {

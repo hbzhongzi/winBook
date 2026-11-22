@@ -3,6 +3,8 @@
 // PDF 适配三件套（v0.2.9：pdfFit/pdfZoom/pdfDpr，存储键与 version 均不变，D67）、
 // 标记记录总开关（v0.3.0：markEnabled，同样不改 version）。
 // 新标记默认高亮色（v0.3.0：markDefaultColor，白名单四色，缺省 yellow）。
+// PDF 独立阅读模式（D106：pdfReaderMode）——PDF 默认翻页双栏，与 EPUB/TXT 的
+// readerMode 解耦；改 PDF 默认不会误伤其它格式的阅读习惯。
 // 持久化到 localStorage；变更通过订阅机制广播，让已打开的书籍即时生效（无需重开图书）。
 // v3（含版式三件套）全量迁移、v2 全量迁移、v1（仅 epubPreloadCount）只读保留，均不删除。
 
@@ -30,6 +32,20 @@ export type ReaderMode = "scroll" | "page";
 
 export const READER_MODES: ReaderMode[] = ["scroll", "page"];
 export const READER_MODE_DEFAULT: ReaderMode = "scroll";
+
+/**
+ * PDF 独立阅读模式默认（D106）：page=翻页。
+ *
+ * 旧实现把 PDF 也挂在全局 `readerMode` 上，于是「PDF 默认翻页双栏」只能改全局默认，
+ * 会把 EPUB/TXT 一起改成翻页（用户正在验证 EPUB 滚动模式，不能误伤）。D106 起
+ * PDF 用独立字段 `pdfReaderMode`，缺省翻页；EPUB/TXT 仍用 `readerMode`，缺省滚动。
+ */
+export const PDF_READER_MODE_DEFAULT: ReaderMode = "page";
+
+/** PDF 模式归一化：仅 page/scroll 合法，其余（含旧配置缺字段）回落 page */
+export function normalizePdfReaderMode(v: unknown): ReaderMode {
+  return v === "page" || v === "scroll" ? v : PDF_READER_MODE_DEFAULT;
+}
 
 /** 正文字体（v0.2.4 F13）：system=系统默认（存量零回归） */
 export type FontFamily = "system" | "song" | "kai";
@@ -59,6 +75,8 @@ export type Settings = {
   fontSize: number;
   /** 阅读模式：scroll=纵向滚动，page=横向翻页；默认 "scroll" 保持存量行为 */
   readerMode: ReaderMode;
+  /** PDF 独立阅读模式（D106）：默认 "page"=翻页；与 readerMode（EPUB/TXT）解耦 */
+  pdfReaderMode: ReaderMode;
   /** 行距倍数（v0.2.4 F12）：1.4–2.2，步进 0.05，默认 1.75 */
   lineHeight: number;
   /** 正文字体（v0.2.4 F13）：默认 "system" 保持存量行为 */
@@ -79,7 +97,8 @@ export type Settings = {
    * 与 `pdfFit` 彻底解耦。旧实现把「双页」当成一种**适配方式**，于是选自适应/适宽/
    * 适高/自定义全部退回单页 —— 用户改缩放就打破双栏，这就是「缩放会破坏栏规则」的根因。
    * 现在栏数是独立维度：任何适配方式、任何倍率下，栏数都不变。
-   * 存量缺省 1；若旧配置 `pdfFit === "spread"` 则归一化为 `pdfColumns = 2`（见 normalize）。
+   * 存量缺省 1；D106 起缺省 2（PDF 默认双栏）。若旧配置 `pdfFit === "spread"`
+   * 则归一化为 2（见 normalize）。
    */
   pdfColumns: 1 | 2;
   /** 标记记录总开关（v0.3.0 F31）：关闭后不弹划词工具条、面板入口隐藏；存量缺省 true */
@@ -132,6 +151,8 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: DEFAULT_ACCENT,
   fontSize: FONT_DEFAULT,
   readerMode: READER_MODE_DEFAULT,
+  // D106：PDF 默认翻页双栏——独立字段不影响 EPUB/TXT 的滚动默认
+  pdfReaderMode: PDF_READER_MODE_DEFAULT,
   lineHeight: LINE_HEIGHT_DEFAULT,
   fontFamily: FONT_FAMILY_DEFAULT,
   contentMargin: MARGIN_DEFAULT,
@@ -139,7 +160,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pdfFit: PDF_FIT_DEFAULT,
   pdfZoom: PDF_ZOOM_DEFAULT,
   pdfDpr: true,
-  pdfColumns: 1,
+  // D106：PDF 默认双栏（旧版缺省单栏；老配置若显式存了 1 则保留用户选择）
+  pdfColumns: 2,
   markEnabled: true,
   markDefaultColor: "yellow",
 };
@@ -199,9 +221,12 @@ export function accentHover(accent: string): string {
  * `pdfFit: "spread"` 而没有 `pdfColumns`。此时必须迁移成 2，否则升级后
  * 用户原本的双页阅读会莫名退回单页（属于行为回归，不能放过）。
  */
-export function normalizePdfColumns(v: unknown, legacyFit: unknown): 1 | 2 {
+export function normalizePdfColumns(v: unknown, _legacyFit: unknown): 1 | 2 {
+  // D106：PDF 默认翻页双栏。显式 1/2 永远优先（尊重用户手动切换）；
+  // 缺字段或非法值统一回落 2——不再因为旧配置里存了 pdfFit:"auto" 就把老用户
+  // 留在单栏。旧版 pdfFit:"spread" 本来也是双栏，迁移后语义不变。
   if (v === 1 || v === 2) return v;
-  return normalizePdfFit(legacyFit) === "spread" ? 2 : 1;
+  return 2;
 }
 
 /** 逐字段校验：非法值静默回落默认（与 v1 clamp 行为一致） */
@@ -213,6 +238,8 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     accent: normalizeAccent(r.accent),
     fontSize: clamp(Number(r.fontSize), FONT_MIN, FONT_MAX, FONT_DEFAULT),
     readerMode: normalizeReaderMode(r.readerMode),
+    // D106：PDF 独立模式；旧配置缺字段统一回落 page（PDF 默认翻页）
+    pdfReaderMode: normalizePdfReaderMode(r.pdfReaderMode),
     lineHeight: normalizeLineHeight(r.lineHeight),
     fontFamily: normalizeFontFamily(r.fontFamily),
     contentMargin: normalizeContentMargin(r.contentMargin),
@@ -221,8 +248,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     pdfZoom: clampPdfZoom(Number(r.pdfZoom)),
     // 显式 boolean 才采用；缺字段（旧配置）默认开启高清
     pdfDpr: typeof r.pdfDpr === "boolean" ? r.pdfDpr : true,
-    // 栏数（D102）：显式 1/2 才采用；缺字段时从旧口径迁移——
-    // 旧版「双页」是 pdfFit 的一个取值，故 pdfFit==="spread" → 2，其余 → 1。
+    // 栏数（D106）：显式 1/2 才采用；缺字段/非法值统一回落双栏（PDF 打开即双栏）
     pdfColumns: normalizePdfColumns(r.pdfColumns, r.pdfFit),
     // 标记记录开关（v0.3.0）：旧配置缺字段默认开启，存量零回归
     markEnabled: typeof r.markEnabled === "boolean" ? r.markEnabled : true,

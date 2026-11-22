@@ -283,7 +283,11 @@ export default function App() {
   // 设置面板提交：readerMode 变化且正在阅读时，先捕获位置再落库重挂载
   const handleSettingsChange = useCallback(
     (next: Settings) => {
-      if (next.readerMode !== settings.readerMode && book) {
+      // D106：任一模式字段变化都要捕获位置并重挂载（PDF 与 EPUB/TXT 各自独立）
+      const modeChanged =
+        next.readerMode !== settings.readerMode ||
+        next.pdfReaderMode !== settings.pdfReaderMode;
+      if (modeChanged && book) {
         captureForRemount();
         setBusy({ text: "正在切换阅读模式…", leaving: false });
       }
@@ -297,7 +301,7 @@ export default function App() {
       const effective = inheritZoom ? { ...next, pdfZoom: pdfScale.pct } : next;
       setSettings(saveSettings(effective));
     },
-    [settings.readerMode, book, captureForRemount, settings.pdfFit, settings.pdfZoom, pdfScale]
+    [settings.readerMode, settings.pdfReaderMode, book, captureForRemount, settings.pdfFit, settings.pdfZoom, pdfScale]
   );
 
   // v0.2.9：倍率微调（工具栏 ± / Ctrl+滚轮）。非自定义模式下以当前实际倍率为基点，
@@ -333,12 +337,17 @@ export default function App() {
     [handleScaleReport, handleSettingsChange, handleZoomNudge, settings]
   );
 
+  // D106：PDF 用独立模式（默认翻页双栏），EPUB/TXT 仍用 readerMode（默认滚动）。
+  // 统一在这里收敛，Toolbar / BookViewer / StatusBar 都拿生效值，避免各处重复判断。
+  const effectiveReaderMode: ReaderMode =
+    book?.format === "pdf" ? settings.pdfReaderMode : settings.readerMode;
+
   // v0.2.9：状态栏 PDF 动态文案（实际适配方式 + 栏数 + 倍率 + 高清开关）
   const pdfDetail =
     book?.format === "pdf" && pdfScale
-      ? (settings.readerMode === "page" ? "单页翻页" : "连续滚动") +
+      ? (settings.pdfReaderMode === "page" ? "单页翻页" : "连续滚动") +
         " · " +
-        (settings.readerMode === "page" ? (settings.pdfColumns === 2 ? "双栏" : "单栏") + " · " : "") +
+        (settings.pdfReaderMode === "page" ? (settings.pdfColumns === 2 ? "双栏" : "单栏") + " · " : "") +
         FIT_LABELS[migratePdfFit(pdfScale.fit)] +
         " " +
         pdfScale.pct +
@@ -346,14 +355,19 @@ export default function App() {
         (settings.pdfDpr ? "开" : "关")
       : null;
 
-  // 工具栏即时切换阅读模式（与设置面板写同一 readerMode 字段）
+  // 工具栏即时切换阅读模式：按当前书格式写对应字段，互不影响（D106）
   const toggleReaderMode = useCallback(() => {
     if (!book) return;
     captureForRemount();
     setBusy({ text: "正在切换阅读模式…", leaving: false });
+    if (book.format === "pdf") {
+      const next: ReaderMode = settings.pdfReaderMode === "page" ? "scroll" : "page";
+      setSettings(saveSettings({ pdfReaderMode: next }));
+      return;
+    }
     const next: ReaderMode = settings.readerMode === "page" ? "scroll" : "page";
     setSettings(saveSettings({ readerMode: next }));
-  }, [book, settings.readerMode, captureForRemount]);
+  }, [book, settings.readerMode, settings.pdfReaderMode, captureForRemount]);
 
   // Go 侧关闭拦截：main.go 的 OnBeforeClose 发 app:flush-request，
   // 前端同步 flush 后回 app:flush-done，Go 最多等 600ms 再退出
@@ -673,7 +687,7 @@ export default function App() {
       <Toolbar
         book={book}
         loading={loading}
-        readerMode={settings.readerMode}
+        readerMode={effectiveReaderMode}
         onOpen={() => void handleOpen()}
         onShelf={handleShelf}
         onSettings={() => setShowSettings(true)}
@@ -695,7 +709,7 @@ export default function App() {
           book={book}
           openCount={openCount}
           settings={settings}
-          readerMode={settings.readerMode}
+          readerMode={effectiveReaderMode}
           entries={entries}
           customCats={customCats}
           currentCat={currentCat}
@@ -737,7 +751,7 @@ export default function App() {
         book={book}
         detail={detail}
         entries={entries}
-        readerMode={settings.readerMode}
+        readerMode={effectiveReaderMode}
         savedFlash={savedFlash}
         pdfDetail={pdfDetail}
       />

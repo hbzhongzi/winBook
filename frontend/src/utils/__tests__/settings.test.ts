@@ -14,6 +14,7 @@ import {
   MARGIN_DEFAULT,
   MARGIN_MAX,
   MARGIN_MIN,
+  PDF_READER_MODE_DEFAULT,
   PRELOAD_DEFAULT,
   PRELOAD_MAX,
   PRELOAD_MIN,
@@ -343,7 +344,7 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(DEFAULT_SETTINGS.pdfFit).toBe("auto");
     expect(DEFAULT_SETTINGS.pdfZoom).toBe(100);
     expect(DEFAULT_SETTINGS.pdfDpr).toBe(true);
-    expect(DEFAULT_SETTINGS.pdfColumns).toBe(1);
+    expect(DEFAULT_SETTINGS.pdfColumns).toBe(2);
   });
 
   it("旧配置（无三字段）载入后回落默认，不抛错", () => {
@@ -356,7 +357,7 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(s.pdfFit).toBe("auto");
     expect(s.pdfZoom).toBe(100);
     expect(s.pdfDpr).toBe(true);
-    expect(s.pdfColumns).toBe(1);
+    expect(s.pdfColumns).toBe(2); // D106：缺字段回落双栏
   });
 
   it("D102：旧 pdfFit=spread 配置迁移出 pdfColumns=2（double 页阅读不回退）", () => {
@@ -387,7 +388,7 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(s.pdfFit).toBe("auto");
     expect(s.pdfZoom).toBe(400);
     expect(s.pdfDpr).toBe(true);
-    expect(s.pdfColumns).toBe(1);
+    expect(s.pdfColumns).toBe(2); // D106：非法栏数回落双栏默认
   });
 
   it("合法值原样保留（含 spread 别名与自定义倍率）", () => {
@@ -422,7 +423,7 @@ describe("settings v0.2.9（PDF 适配三件套）", () => {
     expect(s.pdfFit).toBe("auto");
     expect(s.pdfZoom).toBe(100);
     expect(s.pdfDpr).toBe(true);
-    expect(s.pdfColumns).toBe(1);
+    expect(s.pdfColumns).toBe(2); // D106：复位到新默认双栏
   });
 });
 
@@ -467,5 +468,45 @@ describe("settings v0.3.0（标记记录开关 markEnabled）", () => {
     const s = loadSettings();
     expect(s.markEnabled).toBe(true);
     expect(s.markDefaultColor).toBe("yellow");
+  });
+});
+
+describe("settings D106（PDF 独立默认翻页双栏）", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("PDF 默认翻页双栏，且不污染 EPUB/TXT 的滚动默认", () => {
+    expect(PDF_READER_MODE_DEFAULT).toBe("page");
+    expect(DEFAULT_SETTINGS.pdfReaderMode).toBe("page");
+    expect(DEFAULT_SETTINGS.readerMode).toBe("scroll");
+    expect(DEFAULT_SETTINGS.pdfColumns).toBe(2);
+  });
+
+  it("旧配置缺 pdfReaderMode 回落 page；显式 pdfColumns=1 仍被尊重", () => {
+    localStorage.setItem(
+      "bookeditor.settings.v4",
+      JSON.stringify({ readerMode: "scroll", pdfColumns: 1 })
+    );
+    const s = loadSettings();
+    expect(s.pdfReaderMode).toBe("page");
+    expect(s.readerMode).toBe("scroll");
+    expect(s.pdfColumns).toBe(1); // 用户手动切过单栏：不覆盖
+  });
+
+  it("pdfReaderMode 非法值回落 page，合法值原样保留", () => {
+    expect(normalizeSettings({ pdfReaderMode: "vertical" as never }).pdfReaderMode).toBe("page");
+    expect(normalizeSettings({ pdfReaderMode: undefined }).pdfReaderMode).toBe("page");
+    expect(normalizeSettings({ pdfReaderMode: "scroll" }).pdfReaderMode).toBe("scroll");
+    expect(normalizeSettings({ pdfReaderMode: "page" }).pdfReaderMode).toBe("page");
+  });
+
+  it("两个模式字段独立保存，互不覆盖", () => {
+    const s = saveSettings({ pdfReaderMode: "scroll" });
+    expect(s.readerMode).toBe("scroll");
+    expect(s.pdfReaderMode).toBe("scroll");
+    const s2 = saveSettings({ readerMode: "page" });
+    expect(s2.readerMode).toBe("page");
+    expect(s2.pdfReaderMode).toBe("scroll"); // PDF 侧保持
   });
 });
