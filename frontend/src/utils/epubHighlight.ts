@@ -15,6 +15,12 @@
 //
 // 本层用正确的判定替代：只丢「与其它矩形几乎完全相同」的重复项（getClientRects
 // 在行内嵌套元素上会重复返回同一个几何框），**不**按包含关系丢弃——小块本就该留。
+//
+// D104 补充：本层**只负责过滤**，坐标换算仍交给 marks-pane 的原 render()。
+// 原公式 `r.left - offset.left + container.left` 中的 `+ container.left` 抵消了
+// Pane 容器在宿主页面的偏移，是 iframe 内坐标 → SVG 局部坐标的正确桥梁。
+// D103 曾另写 toSvgRect 自行换算（拿 svg 的宿主坐标减 iframe 内坐标），会整体偏移，
+// 已移除。过滤后的列表通过临时替换 Mark.filteredRanges() 喂给原 render。
 
 /** 与 DOMRect 对齐的最小结构（便于单测构造） */
 export type RectLike = {
@@ -60,19 +66,3 @@ export function filterRects(rects: RectLike[]): RectLike[] {
   return out;
 }
 
-/**
- * 把一个矩形换算成相对 SVG 原点的 x/y/宽/高。
- *
- * marks-pane 原实现用 `<g>.getBoundingClientRect()` 当原点（`offset`），首次渲染
- * 时 `<g>` 还没有子元素、包围盒为 0，于是所有 rect 坐标整体偏移。这里改为**显式
- * 传入偏移量**（由调用方给出 pane 的 svg 定位基准），不依赖 `<g>` 自身的包围盒，
- * 因此重画多少次都稳定。
- */
-export function toSvgRect(r: RectLike, originLeft: number, originTop: number) {
-  return {
-    x: r.left - originLeft,
-    y: r.top - originTop,
-    width: r.width,
-    height: r.height,
-  };
-}

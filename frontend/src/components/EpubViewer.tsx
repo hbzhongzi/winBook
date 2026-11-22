@@ -10,7 +10,7 @@ import { applyReadingStyle } from "../utils/readingTheme";
 import type { ReadingPosition, PositionReport } from "../utils/library";
 import { MARK_SELECT_MIN, type Mark, type MarkColor, type MarkLocator } from "../utils/marks";
 import { epubDiag, clearEpubDiag, getEpubDiagText } from "../utils/epubDiag";
-import { filterRects, toSvgRect, type RectLike } from "../utils/epubHighlight";
+import { filterRects, type RectLike } from "../utils/epubHighlight";
 import MarkToolbar, { type MarkToolbarMode } from "./MarkToolbar";
 import type { MarksContext } from "./marksContext";
 
@@ -1120,56 +1120,73 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
   };
 
   /**
-   * 用正确的 rect 过滤重画一条高亮（D103）。
+   * 用正确的 rect 过滤重画一条高亮（D103 引入，D104 修正坐标系）。
    *
    * 为什么不能直接用 marks-pane 的结果：它的 `filteredRanges()` 会丢弃「被其它矩形
    * 包含」的框。`Range.getClientRects()` 在跨块元素（段落/body）选区时会额外返回
    * 一个容器级包围盒，于是逐行框全被它吞掉 → 只画出一个大矩形 = 整块实心色块。
    *
-   * 本函数自己算 rect、自己写 `<rect>`，并**保留**被包含的逐行框（它们才是贴合
-   * 文字的部分）。原点取 pane 的 `<svg>` 而非 `<g>`：`<g>` 首次渲染前包围盒为 0，
-   * 用它当原点会导致整体偏移；`<svg>` 由 Pane 显式定位（top/left 为 important 像素），
-   * 稳定可复现。
+   * D104 关键修正：**只替换矩形过滤，不接管坐标计算**。marks-pane 原 render 用
+   * `r.left - offset.left + container.left`，其中 `+ container.left` 正好抵消 Pane
+   * 容器在宿主页面的偏移。D103 曾自行拿 `svg.getBoundingClientRect()` 当原点写
+   * `<rect>`，那是**宿主页面坐标**，与 iframe 内容视口坐标不同系：容器一旦不在
+   * 页面原点（侧栏/留白），高亮就整体左上偏移。改为临时替换 `filteredRanges()`
+   * 后调用原 render，让成熟坐标系继续生效，本函数只喂正确的矩形列表。
    */
   const repaintHighlight = (mark: unknown): void => {
     const m = mark as
-      | { range?: Range; element?: SVGGElement | null; attributes?: Record<string, string> }
+      | {
+          range?: Range;
+          element?: SVGGElement | null;
+          attributes?: Record<string, string>;
+          filteredRanges?: () => RectLike[];
+          render?: () => void;
+        }
       | null
       | undefined;
     const g = m?.element;
     const range = m?.range;
-    if (!g || !range) return;
-    const svg = g.parentElement; // Pane 的 <svg>
-    if (!svg) return;
-    const ownDoc = g.ownerDocument;
-    const view = ownDoc?.defaultView;
-    if (!view) return;
-    // 读取真实选区的逐行矩形。getClientRects 的坐标系是「章节文档视口」，
-    // Pane 的 svg 也铺在同一坐标系（absolute 覆盖 iframe 内容区），故直接用其
-    // 视口矩形作原点。
+    const originalRender = m?.render;
+    const originalFiltered = m?.filteredRanges;
+    if (
+      !g ||
+      !range ||
+      typeof originalRender !== "function" ||
+      typeof originalFiltered !== "function"
+    ) {
+      return;
+    }
+    // 读取逐行矩形，只做过滤：去掉完全重复项与零面积项，**保留被包含的逐行框**。
+    // 坐标换算交给原 render，这里不碰。详见 utils/epubHighlight.ts 顶部说明。
     const rects = filterRects(Array.from(range.getClientRects()) as RectLike[]);
     if (rects.length === 0) return;
-    const svgRect = svg.getBoundingClientRect();
-    // 清空旧子节点后按本算法重建
-    while (g.firstChild) g.removeChild(g.firstChild);
+
+    const patched = m as { filteredRanges: () => RectLike[] };
+    const hadOwnFiltered = Object.prototype.hasOwnProperty.call(m, "filteredRanges");
+    patched.filteredRanges = () => rects;
+    try {
+      // 原 render 会清空 <g>、按自己的坐标系写 <rect>；fill/fill-opacity 由
+      // mark.bind 已写在 <g> 上，正常由子元素继承。
+      originalRender.call(m);
+    } finally {
+      // 恢复原方法，避免影响后续 relocate / 其它视图的渲染。
+      if (hadOwnFiltered) patched.filteredRanges = originalFiltered;
+      else delete (m as { filteredRanges?: () => RectLike[] }).filteredRanges;
+    }
+
+    // 圆角 + 颜色写到每个 <rect>（D103 防御性措施保留）：即使书籍 CSS 对 <g>
+    // 设了 fill，每一行颜色也始终一致。
     const attrs = m.attributes ?? {};
-    for (const r of rects) {
-      const box = toSvgRect(r, svgRect.left, svgRect.top);
-      const el = ownDoc.createElementNS("http://www.w3.org/2000/svg", "rect");
-      el.setAttribute("x", String(box.x));
-      el.setAttribute("y", String(box.y));
-      el.setAttribute("width", String(box.width));
-      el.setAttribute("height", String(box.height));
+    g.querySelectorAll("rect").forEach((el) => {
       el.setAttribute("rx", "2");
-      // 颜色写在每个 rect 上（而非依赖 <g> 继承）：即使宿主或书籍 CSS 对
-      // g 设了 fill，也不会把颜色改掉，各行颜色始终一致。
       if (attrs.fill) el.setAttribute("fill", attrs.fill);
       if (attrs["fill-opacity"]) el.setAttribute("fill-opacity", attrs["fill-opacity"]);
-      g.appendChild(el);
-    }
+    });
+
+    const gb = g.getBoundingClientRect();
     epubDiag(
       "HL_REPAINT",
-      `id=${g.getAttribute("data-id") ?? "-"} rects=${rects.length} svg=${Math.round(svgRect.width)}x${Math.round(svgRect.height)}`
+      `id=${g.getAttribute("data-id") ?? "-"} rects=${rects.length} g=${Math.round(gb.width)}x${Math.round(gb.height)}`
     );
   };
 

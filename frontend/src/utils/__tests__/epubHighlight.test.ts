@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { filterRects, toSvgRect, type RectLike } from "../epubHighlight";
+import { filterRects, type RectLike } from "../epubHighlight";
 
 const rect = (top: number, left: number, width: number, height: number): RectLike => ({
   top,
@@ -59,17 +59,5 @@ describe("D103：EPUB 高亮 rect 过滤", () => {
 
   it("空输入返回空数组", () => {
     expect(filterRects([])).toEqual([]);
-  });
-});
-
-describe("D103：坐标换算到 SVG 原点", () => {
-  it("减去 svg 视口原点得到局部坐标", () => {
-    const r = rect(150, 80, 200, 18);
-    expect(toSvgRect(r, 60, 100)).toEqual({ x: 20, y: 50, width: 200, height: 18 });
-  });
-
-  it("原点为 0 时原样透传（svg 与视口重合的常见情形）", () => {
-    const r = rect(10, 20, 30, 40);
-    expect(toSvgRect(r, 0, 0)).toEqual({ x: 20, y: 10, width: 30, height: 40 });
   });
 });
