@@ -34,6 +34,7 @@ import {
   migratePdfFit,
   resolvePdfScale,
   spreadLeftMax,
+  zoomAnchorScroll,
   type PdfColumns,
   type PdfFit,
   type PdfViewHandlers,
@@ -145,6 +146,49 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   const initialRecoverRef = useRef<{ active: boolean; target: number } | null>(null);
   // 最近一次适配解析结果：档位菜单据此显示各方式在当前容器/页面下的实际倍率
   const lastResolvedRef = useRef<ResolvedPdfScale | null>(null);
+
+  // ===== D110：以鼠标为中心缩放的锚点 =====
+  // Ctrl+滚轮触发缩放后，settings 更新与 canvas 重排是异步的；先记下锚点，
+  // 待 renderPage/renderScrollPage 完成（canvas 尺寸已写入 DOM）再校正滚动位置，
+  // 使鼠标下的内容点在缩放前后停留在视口同一位置。
+  type ZoomAnchor = {
+    vx: number; // 鼠标相对容器视口的 x（缩放前后固定）
+    vy: number;
+    px: number; // 鼠标相对内容元素左边缘的 x（缩放前测量）
+    py: number;
+    w: number; // 缩放前内容元素宽（算缩放比）
+    h: number;
+    at: number; // 记录时刻：缩放被钳制未触发重渲时，超时作废
+  };
+  const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  /** 缩放锚点参照的内容元素：翻页取 .pdf-page（双栏含间距的总宽由 JS 同步写入），
+   *  滚动取当前页 canvas（其 style.width 在 renderOnCanvas 中同步写入） */
+  const anchorContent = useCallback(
+    (el: HTMLElement): HTMLElement | null =>
+      isScroll
+        ? el.querySelector<HTMLElement>(".pdf-page-slot .pdf-canvas")
+        : el.querySelector<HTMLElement>(".pdf-page"),
+    [isScroll]
+  );
+  /** 在页面重绘完成后应用锚点校正（幂等：应用一次即清空） */
+  const applyZoomAnchor = useCallback(() => {
+    const a = zoomAnchorRef.current;
+    if (!a) return;
+    zoomAnchorRef.current = null;
+    if (Date.now() - a.at > 3000) return; // 缩放被钳制/未重渲：过期作废
+    const el = isScroll ? scrollRef.current : areaRef.current;
+    if (!el) return;
+    const content = anchorContent(el);
+    if (!content) return;
+    const elRect = el.getBoundingClientRect();
+    const cRect = content.getBoundingClientRect();
+    const rx = a.w > 0 ? cRect.width / a.w : 1;
+    const ry = a.h > 0 ? cRect.height / a.h : 1;
+    const leadX = cRect.left - elRect.left;
+    const leadY = cRect.top - elRect.top;
+    el.scrollLeft = zoomAnchorScroll(el.scrollLeft, leadX, a.px, a.vx, rx);
+    el.scrollTop = zoomAnchorScroll(el.scrollTop, leadY, a.py, a.vy, ry);
+  }, [isScroll, anchorContent]);
 
   // ===== v0.2.9：容器内盒测量 =====
   // page 模式量 .pdf-canvas-area（扣 22px padding），scroll 模式量 .pdf-scroll（无横向 padding）。
@@ -425,6 +469,7 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           // D101：回填画笔层尺寸（画笔按页面 CSS 像素对齐）
           setInkBox((prev) => (prev.w === r0.cssW && prev.h === r0.cssH ? prev : { w: r0.cssW, h: r0.cssH }));
           reportScale(r0);
+          applyZoomAnchor(); // D110：canvas 尺寸已写入 DOM，校正鼠标锚点
         } else {
           const c0 = canvasRefs.current[0];
           if (!c0) return;
@@ -434,6 +479,7 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           if (area) area.dataset.fit = r.cssH <= boxRef.current.h ? "center" : "top";
           setInkBox((prev) => (prev.w === r.cssW && prev.h === r.cssH ? prev : { w: r.cssW, h: r.cssH }));
           reportScale(r);
+          applyZoomAnchor(); // D110：canvas 尺寸已写入 DOM，校正鼠标锚点
         }
         fireReady(); // 首页渲染完成：通知 App 淡出加载遮罩
         prefetchNeighbors(left);
@@ -444,7 +490,7 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
         }
       }
     },
-    [cancelRenderTask, drawInto, fireReady, prefetchNeighbors, reportScale]
+    [cancelRenderTask, drawInto, fireReady, prefetchNeighbors, reportScale, applyZoomAnchor]
   );
 
   // 页码变化 → 重渲（box/settings 变化走下面的 effect，避免依赖抖动）
@@ -569,10 +615,11 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
         // 滚动模式首屏渲染完成：通知 App 淡出加载遮罩（D51：原实现仅 page 模式
         // 调 fireReady，滚动模式遮罩要等 10s 兜底，期间遮罩吞掉工具栏点击）
         fireReady();
+        applyZoomAnchor(); // D110：canvas 尺寸已写入 DOM，校正鼠标锚点（幂等）
       }
       reportScale(r);
     },
-    [getPageCached, fireReady, cumulativeTop, reportScale, renderOnCanvas]
+    [getPageCached, fireReady, cumulativeTop, reportScale, renderOnCanvas, applyZoomAnchor]
   );
 
   /** 置空某页 canvas（超出窗口时释放位图，控制内存） */
@@ -931,17 +978,110 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marksCtx?.jumpTarget]);
 
-  // ===== v0.2.9：Ctrl+滚轮调倍率（阅读区任意位置）=====
+  // ===== v0.2.9 / D110：Ctrl+滚轮调倍率，改为以鼠标为中心缩放 =====
   useEffect(() => {
     const el = isScroll ? scrollRef.current : areaRef.current;
     if (!el) return;
     const onWheel = (ev: WheelEvent) => {
       if (!ev.ctrlKey) return;
       ev.preventDefault(); // 阻止浏览器默认页面缩放
+      // D110：记下鼠标锚点；canvas 重排后由 applyZoomAnchor 校正滚动位置。
+      // 双重滚轮会覆盖上一次锚点（以最后一次为准），符合连续缩放直觉。
+      const elRect = el.getBoundingClientRect();
+      const content = anchorContent(el);
+      if (content) {
+        const cRect = content.getBoundingClientRect();
+        zoomAnchorRef.current = {
+          vx: ev.clientX - elRect.left,
+          vy: ev.clientY - elRect.top,
+          px: ev.clientX - cRect.left,
+          py: ev.clientY - cRect.top,
+          w: cRect.width,
+          h: cRect.height,
+          at: Date.now(),
+        };
+      }
       viewRef.current?.onZoomNudge?.(ev.deltaY < 0 ? PDF_ZOOM_NUDGE : -PDF_ZOOM_NUDGE);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
+  }, [isScroll, pageCount, anchorContent]);
+
+  // ===== D110：Ctrl+拖动平移视图 =====
+  // 挂在阅读容器的 capture 阶段：先于 InkCanvas 的 React 处理器消费事件，
+  // 避免按住 Ctrl 拖动画布时误落笔。setPointerCapture 让后续 move/up 都发到容器。
+  useEffect(() => {
+    const el = isScroll ? scrollRef.current : areaRef.current;
+    if (!el || pageCount <= 0) return;
+    let panning = false;
+    let panPid = -1;
+    let startX = 0;
+    let startY = 0;
+    let startSL = 0;
+    let startST = 0;
+    const onDown = (ev: PointerEvent) => {
+      if (!ev.ctrlKey || ev.button !== 0) return;
+      panning = true;
+      panPid = ev.pointerId;
+      startX = ev.clientX;
+      startY = ev.clientY;
+      startSL = el.scrollLeft;
+      startST = el.scrollTop;
+      el.classList.add("pdf-panning");
+      try {
+        el.setPointerCapture(ev.pointerId);
+      } catch {
+        /* 指针已释放等边界情况忽略 */
+      }
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    const onMove = (ev: PointerEvent) => {
+      if (!panning || ev.pointerId !== panPid) return;
+      el.scrollLeft = startSL - (ev.clientX - startX);
+      el.scrollTop = startST - (ev.clientY - startY);
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (!panning || ev.pointerId !== panPid) return;
+      panning = false;
+      panPid = -1;
+      el.classList.remove("pdf-panning");
+      try {
+        el.releasePointerCapture(ev.pointerId);
+      } catch {
+        /* 忽略 */
+      }
+    };
+    el.addEventListener("pointerdown", onDown, true);
+    el.addEventListener("pointermove", onMove, true);
+    el.addEventListener("pointerup", onUp, true);
+    el.addEventListener("pointercancel", onUp, true);
+    return () => {
+      el.removeEventListener("pointerdown", onDown, true);
+      el.removeEventListener("pointermove", onMove, true);
+      el.removeEventListener("pointerup", onUp, true);
+      el.removeEventListener("pointercancel", onUp, true);
+      el.classList.remove("pdf-panning", "pdf-pan-ready");
+    };
+  }, [isScroll, pageCount]);
+
+  // D110：按住 Ctrl 时把阅读容器光标切成抓手，给出「可拖动」提示
+  useEffect(() => {
+    const el = isScroll ? scrollRef.current : areaRef.current;
+    if (!el) return;
+    const sync = (ev: KeyboardEvent) => el.classList.toggle("pdf-pan-ready", ev.ctrlKey);
+    const clear = () => el.classList.remove("pdf-pan-ready");
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+      el.classList.remove("pdf-pan-ready");
+    };
   }, [isScroll, pageCount]);
 
   // ===== v0.2.9：页码跳转（O11，随视觉基线一并落地）=====

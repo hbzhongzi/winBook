@@ -203,13 +203,32 @@ pre.txt-viewer {
   padding: 22px;
   display: flex;
   justify-content: center;
+  /* D110：放大后内容宽于容器时，flex 居中会把左半页裁到滚动区外且滚不到
+     （flexbox 居中的已知陷阱）；safe center 在溢出时回退到起点，左右都能滚到。 */
+  justify-content: safe center;
   align-items: flex-start;
   /* 预留滚动条槽：避免「页高变化 → 滚动条出现/消失 → 内盒宽度变化 → 再重算」振荡（v0.2.9） */
   scrollbar-gutter: stable;
 }
 /* v0.2.9：适高/双页整页可见时垂直居中；适宽（页内滚动）顶部对齐。
    属性由 PdfViewer 按适配结果直接写 dataset（JS 驱动，非 React 管理） */
-.pdf-canvas-area[data-fit="center"] { align-items: center; }
+.pdf-canvas-area[data-fit="center"] {
+  align-items: center;
+  align-items: safe center; /* D110：同理，纵向放大溢出时不裁顶部 */
+}
+/* ===== D110：Ctrl+拖动画布平移的手势反馈 =====
+   子元素（画布/画笔层）会设置自己的 cursor，父级规则需 !important 才能覆盖。 */
+.pdf-canvas-area.pdf-pan-ready,
+.pdf-canvas-area.pdf-pan-ready *,
+.pdf-scroll.pdf-pan-ready,
+.pdf-scroll.pdf-pan-ready * { cursor: grab !important; }
+.pdf-canvas-area.pdf-panning,
+.pdf-canvas-area.pdf-panning *,
+.pdf-scroll.pdf-panning,
+.pdf-scroll.pdf-panning * {
+  cursor: grabbing !important;
+  user-select: none;
+}
 .pdf-page {
   position: relative;
   background: #fff;

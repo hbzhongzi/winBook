@@ -202,6 +202,39 @@ export function nudgeZoom(current: number, delta: number): number {
 }
 
 /**
+ * D110：以鼠标为锚点的滚动位置校正（Ctrl+滚轮缩放）。
+ *
+ * 各量均取同一轴（x 或 y）：
+ * - `scroll`：缩放前的滚动位置（scrollLeft / scrollTop）
+ * - `currentLead`：内容元素边缘相对容器视口的当前偏移（getBoundingClientRect 之差）
+ * - `anchorInContent`：鼠标相对内容元素边缘的偏移（缩放前测量，随内容等比放大）
+ * - `anchorViewport`：鼠标相对容器视口的偏移（缩放前后固定不变）
+ * - `ratio`：内容缩放比（缩放后尺寸 / 缩放前尺寸）
+ *
+ * 推导：缩放后鼠标下的内容点距内容边缘为 `anchorInContent × ratio`，
+ * 要让该点仍落在视口的 `anchorViewport`，内容边缘应位于
+ * `targetLead = anchorViewport − anchorInContent × ratio`；
+ * 而增大 scroll 会让内容边缘左移/上移，故 `next = scroll + currentLead − targetLead`。
+ *
+ * 非法输入（NaN/Infinity/ratio≤0）原样返回，避免把滚动位置算飞；
+ * 结果钳到 ≥0（浏览器本身也会钳，这里先钳便于单测断言）。
+ */
+export function zoomAnchorScroll(
+  scroll: number,
+  currentLead: number,
+  anchorInContent: number,
+  anchorViewport: number,
+  ratio: number
+): number {
+  const args = [scroll, currentLead, anchorInContent, anchorViewport, ratio];
+  if (!args.every((n) => Number.isFinite(n))) return scroll;
+  if (ratio <= 0) return scroll;
+  const targetLead = anchorViewport - anchorInContent * ratio;
+  const next = scroll + currentLead - targetLead;
+  return Math.max(0, Math.round(next));
+}
+
+/**
  * 档位菜单中各适配方式在当前容器/页面下的实际倍率。
  * r 为 null（尚未测量/渲染）时返回 null，菜单显示「—」。
  * 注意：r 已按当前栏数算出，故这里再切栏数会即时更新（菜单读数与栏数一致）。

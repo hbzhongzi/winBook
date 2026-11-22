@@ -19,6 +19,7 @@ import {
   resolvePdfScale,
   spreadLeftMax,
   spreadLeftPage,
+  zoomAnchorScroll,
   type PdfFit,
 } from "../pdfScale";
 
@@ -306,5 +307,37 @@ describe("pdfScale v0.2.9 — 双栏步进与钳制", () => {
     expect(fitRatio(r, "spread", 100)).toBeCloseTo(r.sp, 6);
     expect(fitRatio(r, "custom", 130)).toBeCloseTo(1.3, 6);
     expect(fitRatio(null, "width", 100)).toBeNull();
+  });
+});
+
+describe("D110：以鼠标为中心缩放的滚动锚点", () => {
+  it("放大 2 倍：鼠标下的内容点保持在视口原位", () => {
+    // 内容左边缘在视口 300px，鼠标在视口 400px（距内容边缘 100px）。
+    // 放大 2 倍后该内容点距内容边缘 200px，内容边缘应落到 200px → scrollLeft 从 0 增到 100。
+    expect(zoomAnchorScroll(0, 300, 100, 400, 2)).toBe(100);
+  });
+
+  it("缩小 0.5 倍：滚动位置相应回退", () => {
+    // 内容边缘当前在 200、鼠标在 400（距边缘 200）；缩到 0.5 倍后目标边缘 = 400−100 = 300，
+    // 需把 scrollLeft 从 100 减到 0（内容右移 100）。
+    expect(zoomAnchorScroll(100, 200, 200, 400, 0.5)).toBe(0);
+  });
+
+  it("ratio=1 且锚点自洽时不改变滚动位置", () => {
+    // 缩放前后内容尺寸不变时 currentLead 应恒等于 anchorViewport − anchorInContent
+    expect(zoomAnchorScroll(80, 300, 100, 400, 1)).toBe(80);
+    expect(zoomAnchorScroll(0, 250, 150, 400, 1)).toBe(0);
+  });
+
+  it("结果取整并钳到 ≥0，非法输入原样返回", () => {
+    // 400−50=350 的目标边缘大于可滚动量 → 负结果钳 0
+    expect(zoomAnchorScroll(20, 100, 100, 600, 0.5)).toBe(0);
+    // 四舍五入：0 + 300.4 − (400−220) = 120.4 → 120
+    expect(zoomAnchorScroll(0, 300.4, 100, 400, 2.2)).toBe(120);
+    // 非法输入不把滚动位置算飞
+    expect(zoomAnchorScroll(50, Number.NaN, 10, 20, 2)).toBe(50);
+    expect(zoomAnchorScroll(50, 10, 20, 30, 0)).toBe(50);
+    expect(zoomAnchorScroll(50, 10, 20, 30, -1)).toBe(50);
+    expect(zoomAnchorScroll(50, 10, 20, 30, Number.NaN)).toBe(50);
   });
 });
