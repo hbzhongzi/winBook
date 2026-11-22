@@ -199,6 +199,126 @@ export function hitStrokes(
   return out;
 }
 
+/**
+ * D111：局部擦除——只擦掉橡皮圆覆盖的笔迹段，保留其余部分。
+ *
+ * D101–D110 的橡皮是「命中即删整条」（hitStrokes 返回下标 → filter 掉整条），
+ * 用户反馈「跟范围完全无关」。本函数改为逐段判定：把连续未命中的段聚合成新
+ * 笔迹，被覆盖的段丢弃。一条长笔画中间擦一下会变成两条，只擦到端点则缩短。
+ *
+ * 判定在**笔迹自身的基准坐标系**进行（把橡皮中心/半径按 pageW/baseW 反变换），
+ * 这样切分出的点仍是原始基准坐标，可直接持久化，缩放后再回放不会错位；
+ * 命中口径与 hitStrokes 一致（线宽一半也算进范围）。
+ *
+ * 返回原数组（同一引用）表示无任何变化，便于调用方跳过 setState。
+ */
+export function eraseStrokesAt(
+  strokes: PdfStroke[],
+  x: number,
+  y: number,
+  r: number,
+  pageW: number,
+  pageH: number
+): PdfStroke[] {
+  if (
+    strokes.length === 0 ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(r) ||
+    !(pageW > 0) ||
+    !(pageH > 0)
+  ) {
+    return strokes;
+  }
+  let changed = false;
+  const out: PdfStroke[] = [];
+
+  for (const stroke of strokes) {
+    const bw = stroke.baseW;
+    const bh = stroke.baseH;
+    const pts = stroke.points;
+    if (!(bw > 0) || !(bh > 0) || pts.length < 2) {
+      out.push(stroke);
+      continue;
+    }
+    const sx = pageW / bw;
+    const sy = pageH / bh;
+    if (!(sx > 0) || !(sy > 0)) {
+      out.push(stroke);
+      continue;
+    }
+    // 橡皮 → 基准坐标（与 stroke.points 同坐标系）
+    const bx = x / sx;
+    const by = y / sy;
+    const br = r / sx;
+    const eff = br + stroke.width / 2;
+    const effSq = Math.max(br * br, eff * eff);
+    const n = Math.floor(pts.length / 2);
+
+    if (n === 1) {
+      const dx = pts[0] - bx;
+      const dy = pts[1] - by;
+      if (dx * dx + dy * dy <= effSq) changed = true;
+      else out.push(stroke);
+      continue;
+    }
+
+    const keep: boolean[] = [];
+    let anyHit = false;
+    for (let i = 0; i < n - 1; i++) {
+      const hit =
+        distToSegmentSq(
+          bx,
+          by,
+          pts[2 * i],
+          pts[2 * i + 1],
+          pts[2 * i + 2],
+          pts[2 * i + 3]
+        ) <= effSq;
+      keep.push(!hit);
+      if (hit) anyHit = true;
+    }
+    if (!anyHit) {
+      out.push(stroke);
+      continue;
+    }
+    changed = true;
+
+    // 连续保留段聚合成新笔迹（点在基准坐标系，top 按 baseH 重算）
+    let group: number[] = [];
+    const flush = () => {
+      if (group.length >= 4) {
+        out.push({ ...stroke, points: group, top: strokeTop(group, bh) });
+      }
+      group = [];
+    };
+    for (let i = 0; i < n - 1; i++) {
+      if (keep[i]) {
+        if (group.length === 0) group.push(pts[2 * i], pts[2 * i + 1]);
+        group.push(pts[2 * i + 2], pts[2 * i + 3]);
+      } else {
+        flush();
+      }
+    }
+    flush();
+  }
+  return changed ? out : strokes;
+}
+
+/**
+ * D111：#RRGGBB → rgba(...)，供画布光标按当前色点与深浅着色。
+ * 非法 hex 原样返回、alpha 钳到 0–1，避免脏值把 CSS 颜色写坏。
+ */
+export function inkCursorColor(hex: string, alpha: number): string {
+  const h = hex.replace(/^#/, "");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return hex;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const a = Number.isFinite(alpha) ? Math.min(1, Math.max(0, alpha)) : 1;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
 /** 采样点追加：与上一点距离过近则丢弃（降噪 + 控体积） */
 export function pushPoint(pts: number[], x: number, y: number): boolean {
   if (pts.length >= 2) {

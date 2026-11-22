@@ -20,6 +20,8 @@ import {
   clampEraserSize,
   clampInkAlpha,
   eraserCursorDiameter,
+  eraseStrokesAt,
+  inkCursorColor,
 } from "../../utils/pdfInk";
 import type { PdfStroke } from "../../utils/marks";
 
@@ -214,5 +216,74 @@ describe("D107：颜色深浅与橡皮大小可调", () => {
     paintStroke(ctx, deep, 100, 200);
     paintStroke(ctx, legacy, 100, 200);
     expect(captured).toEqual([0.7, BRUSH_ALPHA.highlighter]);
+  });
+});
+
+describe("D111：橡皮局部擦除（按范围擦，不再命中即整条删）", () => {
+  const line = (pts: number[], over: Partial<PdfStroke> = {}) =>
+    stroke({ points: pts, width: 2, baseW: 100, baseH: 100, top: 0, ...over });
+
+  it("完全未命中：返回原数组引用（调用方据此跳过 setState）", () => {
+    const s = line([10, 10, 90, 10]);
+    const arr = [s];
+    expect(eraseStrokesAt(arr, 50, 80, 5, 100, 100)).toBe(arr);
+  });
+
+  it("擦中间一段：一条拆成两条，被覆盖段丢掉、两端保留", () => {
+    const s = line([10, 50, 30, 50, 50, 50, 70, 50, 90, 50]);
+    const out = eraseStrokesAt([s], 50, 50, 5, 100, 100);
+    // eff = 5 + 线宽/2 = 6；段 (30→50) 与 (50→70) 都碰到圆心，只剩首尾两段
+    expect(out).toHaveLength(2);
+    expect(out.map((x) => x.points)).toEqual([
+      [10, 50, 30, 50],
+      [70, 50, 90, 50],
+    ]);
+    // 元信息（色/笔刷/基准尺寸）必须随拆分保留
+    expect(out[0].color).toBe(s.color);
+    expect(out[1].baseW).toBe(100);
+  });
+
+  it("擦整条：橡皮覆盖全部段 → 数组变空", () => {
+    const s = line([10, 50, 30, 50, 50, 50, 70, 50, 90, 50]);
+    expect(eraseStrokesAt([s], 50, 50, 100, 100, 100)).toEqual([]);
+  });
+
+  it("擦头部：剩余段重算 top（按 baseH），不再沿用旧值", () => {
+    const s = line([10, 20, 30, 40, 50, 60], { top: 0.2 });
+    const out = eraseStrokesAt([s], 20, 30, 2, 100, 100);
+    expect(out).toHaveLength(1);
+    expect(out[0].points).toEqual([30, 40, 50, 60]);
+    expect(out[0].top).toBeCloseTo(0.4, 6);
+  });
+
+  it("缩放场景：橡皮坐标反变换到基准系后判定，切分结果可直接持久化", () => {
+    const s = line([100, 100, 300, 100], { baseW: 1000, baseH: 1000, top: 0.1 });
+    // pageW=500 → sx=0.5；页面 (100,50) → 基准 (200,100)，正落在线段中点 → 整条擦掉
+    expect(eraseStrokesAt([s], 100, 50, 5, 500, 500)).toEqual([]);
+    // 页面 (200,50) → 基准 (400,100)，距线段终点 300 远大于命中半径 → 不动
+    const arr = [s];
+    expect(eraseStrokesAt(arr, 200, 50, 5, 500, 500)).toBe(arr);
+  });
+
+  it("线宽算进命中范围：粗笔边缘也能擦到，细笔同位置不命中", () => {
+    const fat = line([10, 50, 90, 50], { width: 20 }); // eff = 1 + 10 = 11
+    const thin = line([10, 50, 90, 50], { width: 2 }); // eff = 1 + 1 = 2
+    expect(eraseStrokesAt([fat], 50, 60, 1, 100, 100)).toEqual([]); // 距线 10 ≤ 11
+    expect(eraseStrokesAt([thin], 50, 60, 1, 100, 100)).toHaveLength(1); // 10 > 2
+  });
+});
+
+describe("D111：笔刷光标颜色", () => {
+  it("#RRGGBB 转 rgba（高亮笔按深浅半透明，自由笔实色）", () => {
+    expect(inkCursorColor("#ff0000", 0.32)).toBe("rgba(255, 0, 0, 0.32)");
+    expect(inkCursorColor("#00ff80", 1)).toBe("rgba(0, 255, 128, 1)");
+  });
+
+  it("非法色原样返回、alpha 钳到 0–1", () => {
+    expect(inkCursorColor("red", 0.5)).toBe("red");
+    expect(inkCursorColor("#fff", 0.5)).toBe("#fff");
+    expect(inkCursorColor("#000000", 2)).toBe("rgba(0, 0, 0, 1)");
+    expect(inkCursorColor("#000000", -1)).toBe("rgba(0, 0, 0, 0)");
+    expect(inkCursorColor("#000000", Number.NaN)).toBe("rgba(0, 0, 0, 1)");
   });
 });

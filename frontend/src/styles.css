@@ -257,19 +257,36 @@ pre.txt-viewer {
 /* 单页模式下画笔层相对 .pdf-page 定位；双页模式相对各自的 pdf-page-cell */
 .pdf-page:not([data-spread="1"]) > .pdf-ink { left: 0; top: 0; }
 .pdf-page-slot { position: relative; }
-/* D109：橡皮范围光标圆圈——绝对定位在页面容器内，pointer-events:none 不挡绘制。
-   尺寸/位置由 PdfInkCanvas 按命中半径×缩放实时写入 style。 */
+/* D111：笔刷光标——绝对定位在页面容器内，pointer-events:none 不挡绘制。
+   尺寸/位置/颜色由 PdfInkCanvas 按当前笔刷实时写入 style，形状按 data-brush 区分。 */
 .pdf-ink-cursor {
   position: absolute;
   z-index: 3;
   left: 0;
   top: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: width .08s ease, height .08s ease;
+}
+/* 橡皮：范围圈（直径 = 命中直径），背景色由 CSS 给（JS 会清空 inline background） */
+.pdf-ink-cursor[data-brush="eraser"] {
   border-radius: 50%;
   border: 1px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .6) inset;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
+}
+/* 高亮笔：扁平胶囊条，颜色与深浅由 JS inline 写入（半透明可透出底下文字） */
+.pdf-ink-cursor[data-brush="highlighter"] {
+  border: 0;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .18);
+  opacity: .9;
+}
+/* 自由笔：实心色点（白描边保证在深/浅背景上都看得见） */
+.pdf-ink-cursor[data-brush="pen"] {
+  border: 1px solid rgba(255, 255, 255, .9);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .28);
 }
 
 .pdf-ink-fab,
