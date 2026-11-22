@@ -319,7 +319,7 @@ markDefaultColor: MarkColor;
 
 | T19 | D108 两项：EPUB 滚动划词 CFI 修复 + 橡皮范围示例 | tsc/vitest/build 全过 + 真机确认 | 🔶 代码完成并提交 `f0ca2bd`，`tsc --noEmit` PASS、`vitest run` **299 例全绿**（无新增纯函数用例，修复为组件内 API 误用 + UI 示例），交付 `build/bin/book-editor-D108.exe`；**真机待确认**：A107 滚动划词弹工具条且日志 `DRAG_CFI cfi=1`、A109 橡皮范围示例视觉 |
 
-| T20 | D109 两项：橡皮光标模型 + 工具栏可拖动与布局优化 | tsc/vitest/build 全过 + 真机手感确认 | 🔶 代码完成，`tsc --noEmit` PASS、`vitest run` 299→**300 例全绿**（pdfInk +1：橡皮光标直径换算），交付 `build/bin/book-editor-D109.exe`；**真机待确认**：A110 橡皮光标与命中范围一致、A111 工具栏拖动/复位/布局不再挤压 |
+| T20 | D109 两项：橡皮光标模型 + 工具栏可拖动与布局优化 | tsc/vitest/build 全过 + 真机手感确认 | 🔶 代码完成并提交 `45c5c9b`，`tsc --noEmit` PASS、`vitest run` 299→**300 例全绿**（pdfInk +1：橡皮光标直径换算），交付 `build/bin/book-editor-D109.exe`；**真机待确认**：A110 橡皮光标与命中范围一致、A111 工具栏拖动/复位/布局不再挤压 |
 
 **DoD**：`tsc --noEmit` PASS ✅、`vitest run` 300 例全绿（marks 60 + pdfInk 25 + pdfInkUndo 11 + pdfScale 34 + settings 54 + epubHighlight 11 + markDrag 6 + 其余 99）✅、
 `go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅（最新交付 `book-editor-D109.exe`）、本文 §6/§7/§8 回填至 D109 ✅、D95 弹窗用户确认 ⏳、D89 翻页划词真机验证 ⏳、D98 悬停/右键真机 ⏳、D100 双模式悬停与滚动选词真机 ⏳、D101 PDF 画笔真机 ⏳、D102 三项（A99–A101）真机 ⏳、D103 两项（A102–A103）真机 ⏳、D104 高亮坐标系（A102）真机 ⏳、D105 两项（A102 颜色/容器框、A104 双栏撤销）真机 ⏳、D106 三项（A105 恢复 / A106 默认翻页双栏 / A107 滚动划词）真机 ⏳、D107 画笔扩展（A108）真机 ⏳、D108 两项（A107 滚动划词 CFI / A109 橡皮示例）真机 ⏳、D109 两项（A110 橡皮光标 / A111 工具栏拖动）真机 ⏳、A83–A111 其余真机通过 ⏳、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D109 ⏳（下一步，未在本版范围）。
