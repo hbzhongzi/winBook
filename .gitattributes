@@ -1,0 +1,20 @@
+# 统一行尾：仓库内存 LF，检出到各平台时由 git 按需转换。
+# 此前 Windows 下 core.autocrlf=true 让 go.mod 与 wailsjs 生成文件反复显示为
+# "已修改"，实际内容零差异（git diff --numstat 为空），每次 wails build 后复现。
+* text=auto eol=lf
+
+# wails build 自动生成的绑定文件：只由工具链决定，行尾差异不产生实际变更。
+# 标记为不参与行尾归一化，避免每次构建后污染工作区。
+frontend/wailsjs/** -text
+
+# 二进制文件，禁止行尾转换
+*.exe binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.pdf binary
+*.epub binary
+*.woff binary
+*.woff2 binary
+*.ttf binary

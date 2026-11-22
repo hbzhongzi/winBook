@@ -1,10 +1,28 @@
+# 构建产物
 build/bin
+build/windows
 node_modules
 frontend/dist
 /book-editor.exe
+*.exe
 frontend/package.json.md5
+
+# e2e 临时产物
 e2e/fixtures/
 e2e/shots/
 e2e/run.log
+
+# Python 缓存
 __pycache__/
 *.pyc
+
+# 本地工作区（会话日志与记忆，不随仓库分发）
+.workbuddy/
+
+# 操作系统与编辑器杂项
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
