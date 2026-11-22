@@ -16,6 +16,7 @@ import {
   MAX_POINTS_TOTAL,
   clampEraserSize,
   decimate,
+  eraserCursorDiameter,
   hitStrokes,
   paintStroke,
   pushPoint,
@@ -64,6 +65,8 @@ export default function InkCanvas({
   canvasRefOut,
 }: InkCanvasProps) {
   const ref = useRef<HTMLCanvasElement | null>(null);
+  /** D109：橡皮范围光标（跟随指针的圆圈），用 ref 直接改样式避免每次 mousemove 触发 React 渲染 */
+  const cursorRef = useRef<HTMLSpanElement | null>(null);
   /** 正在绘制的当前笔迹点（CSS 像素坐标 / 页面基准） */
   const drawingRef = useRef<{ pts: number[]; stroke: PdfStroke | null } | null>(null);
   /** 擦除中的连续擦除会话：一次拖拽内不重复删除同一条 */
@@ -121,6 +124,29 @@ export default function InkCanvas({
     return { x: (ev.clientX - r.left) / sx, y: (ev.clientY - r.top) / sy };
   };
 
+  /**
+   * D109：橡皮范围光标。eraserSize 是「页面 CSS 像素半径」，而光标显示在屏幕坐标，
+   * 需乘 rect/page 比例换算成屏幕像素；直径 = 半径×2，与 hitStrokes 的命中范围一致。
+   */
+  const syncEraserCursor = (ev: React.PointerEvent<HTMLCanvasElement>) => {
+    const el = cursorRef.current;
+    const canvas = ref.current;
+    if (!el || !canvas) return;
+    const { tool: t, pageW } = latest.current;
+    if (!t.active || t.brush !== "eraser") {
+      el.style.display = "none";
+      return;
+    }
+    const r = canvas.getBoundingClientRect();
+    const scale = r.width / pageW; // 屏幕像素 / 页面像素
+    const d = eraserCursorDiameter(t.eraserSize, scale); // 直径（屏幕像素），与命中范围一致
+    el.style.width = d + "px";
+    el.style.height = d + "px";
+    el.style.left = ev.clientX - r.left + "px";
+    el.style.top = ev.clientY - r.top + "px";
+    el.style.display = "block";
+  };
+
   /** 增量绘制当前笔迹（每次移动只画新增段，避免整页重绘卡顿） */
   const paintLive = useCallback(() => {
     const canvas = ref.current;
@@ -140,6 +166,7 @@ export default function InkCanvas({
     const { tool: t, pageW: w, pageH: h } = latest.current;
     if (!t.active) return;
     if (ev.button !== 0) return; // 只响应左键（右键留给菜单/原生菜单）
+    syncEraserCursor(ev);
     const p = pointOf(ev);
     if (!p) return;
     ev.preventDefault();
@@ -169,6 +196,7 @@ export default function InkCanvas({
   const onPointerMove = (ev: React.PointerEvent<HTMLCanvasElement>) => {
     const { tool: t } = latest.current;
     if (!t.active) return;
+    syncEraserCursor(ev); // 非橡皮时内部会隐藏
     const p = pointOf(ev);
     if (!p) return;
     if (t.brush === "eraser") {
@@ -233,33 +261,45 @@ export default function InkCanvas({
 
   const curTool = latest.current.tool;
   const interactive = curTool.active;
+  const eraserOn = interactive && curTool.brush === "eraser";
 
   return (
-    <canvas
-      ref={(el) => {
-        ref.current = el;
-        if (canvasRefOut) canvasRefOut.current = el;
-      }}
-      className={
-        "pdf-ink" +
-        (interactive ? " active" : "") +
-        (curTool.brush === "eraser" && interactive ? " eraser" : "")
-      }
-      style={{
-        pointerEvents: interactive ? "auto" : "none",
-        cursor: interactive ? "crosshair" : "auto",
-        touchAction: interactive ? "none" : "auto",
-      }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onPointerLeave={(ev) => {
-        // 指针意外离开画布（如移出窗口）时收尾，避免笔迹悬挂
-        if (drawingRef.current) finishStroke();
-        void ev;
-      }}
-      aria-hidden="true"
-    />
+    <>
+      <canvas
+        ref={(el) => {
+          ref.current = el;
+          if (canvasRefOut) canvasRefOut.current = el;
+        }}
+        className={
+          "pdf-ink" +
+          (interactive ? " active" : "") +
+          (eraserOn ? " eraser" : "")
+        }
+        style={{
+          pointerEvents: interactive ? "auto" : "none",
+          // D109：橡皮用自定义圆圈光标后隐藏系统光标，避免两个光标叠加干扰
+          cursor: eraserOn ? "none" : interactive ? "crosshair" : "auto",
+          touchAction: interactive ? "none" : "auto",
+        }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onPointerLeave={(ev) => {
+          // 指针意外离开画布（如移出窗口）时收尾，避免笔迹悬挂
+          if (drawingRef.current) finishStroke();
+          if (cursorRef.current) cursorRef.current.style.display = "none";
+          void ev;
+        }}
+        aria-hidden="true"
+      />
+      {/* D109：橡皮范围光标——跟随指针的圆圈，直径=命中直径，直观呈现擦除覆盖范围 */}
+      <span
+        ref={cursorRef}
+        className="pdf-ink-cursor"
+        aria-hidden="true"
+        style={{ display: "none" }}
+      />
+    </>
   );
 }

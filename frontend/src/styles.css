@@ -238,7 +238,20 @@ pre.txt-viewer {
 /* 单页模式下画笔层相对 .pdf-page 定位；双页模式相对各自的 pdf-page-cell */
 .pdf-page:not([data-spread="1"]) > .pdf-ink { left: 0; top: 0; }
 .pdf-page-slot { position: relative; }
-.pdf-ink.eraser { cursor: cell; }
+/* D109：橡皮范围光标圆圈——绝对定位在页面容器内，pointer-events:none 不挡绘制。
+   尺寸/位置由 PdfInkCanvas 按命中半径×缩放实时写入 style。 */
+.pdf-ink-cursor {
+  position: absolute;
+  z-index: 3;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .6) inset;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
 
 .pdf-ink-fab,
 .pdf-mark-fab {
@@ -274,14 +287,31 @@ pre.txt-viewer {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 7px 10px;
+  padding: 6px 8px;
   max-width: calc(100% - 32px);
+  align-content: center;
   border-radius: 12px;
   border: 1px solid var(--border-soft);
   background: var(--surface-bg);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
 }
-.pdf-ink-bar .ib-group { display: flex; align-items: center; gap: 4px; }
+.pdf-ink-bar .ib-group { display: flex; align-items: center; gap: 4px; flex: none; }
+/* D109：拖动手柄——按住移动工具栏，双击复位到默认底部居中 */
+.pdf-ink-bar .ib-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 24px;
+  flex: none;
+  color: var(--text-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.pdf-ink-bar .ib-grip:active { cursor: grabbing; }
 .pdf-ink-bar .ib-sep { width: 1px; height: 18px; background: var(--border-soft); }
 .pdf-ink-bar .ib-btn {
   padding: 4px 8px;
@@ -320,11 +350,12 @@ pre.txt-viewer {
   text-align: right;
 }
 .pdf-ink-bar .ib-range {
-  width: 76px;
+  width: 64px;
   height: 16px;
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;
+  flex: none;
 }
 /* D108：橡皮范围示例（实心圆=擦除覆盖，虚线圈=最大范围参考） */
 .pdf-ink-bar .ib-eraser-preview {

@@ -19,6 +19,7 @@ import {
   strokeTop,
   clampEraserSize,
   clampInkAlpha,
+  eraserCursorDiameter,
 } from "../../utils/pdfInk";
 import type { PdfStroke } from "../../utils/marks";
 
@@ -174,6 +175,16 @@ describe("D107：颜色深浅与橡皮大小可调", () => {
     expect(clampEraserSize(1)).toBe(4);
     expect(clampEraserSize(99)).toBe(24);
     expect(clampEraserSize(Number.NaN)).toBe(10);
+  });
+
+  it("D109：橡皮范围光标直径 = 命中直径 × 缩放，非法缩放回落 1", () => {
+    // eraserSize 是半径；直径 = 2×半径。缩放 1.5 时光标同步放大到 36px
+    expect(eraserCursorDiameter(12, 1)).toBe(24);
+    expect(eraserCursorDiameter(12, 1.5)).toBe(36);
+    // 钳制先于换算：越界半径按 24 算，直径 48
+    expect(eraserCursorDiameter(99, 1)).toBe(48);
+    expect(eraserCursorDiameter(10, 0)).toBe(20);
+    expect(eraserCursorDiameter(10, Number.NaN)).toBe(20);
   });
 
   it("绘制优先用笔迹自带 alpha，旧笔迹回落笔刷默认（向后兼容）", () => {

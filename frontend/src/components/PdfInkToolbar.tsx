@@ -9,6 +9,7 @@
 // 样式区随笔刷切换：高亮笔可调「粗细 + 深浅」，自由笔只调粗细，橡皮只调大小。
 // 这样所有可调参数都收在同一段里，不随功能增加而把工具栏横向撑爆。
 
+import { useEffect, useRef, useState } from "react";
 import {
   PDF_INK_COLORS,
   PDF_INK_HEX,
@@ -131,8 +132,91 @@ export default function PdfInkToolbar({
   const alpha = clampInkAlpha(tool.alpha);
   const eraserSize = clampEraserSize(tool.eraserSize);
 
+  // D109：工具栏可拖动。pos 为 null 时用 CSS 默认（底部居中）；拖动后写绝对 left/top。
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    baseX: number;
+    baseY: number;
+  } | null>(null);
+
+  const onGripDown = (ev: React.PointerEvent<HTMLSpanElement>) => {
+    if (ev.button !== 0) return;
+    const bar = barRef.current;
+    const parent = bar?.offsetParent as HTMLElement | null;
+    if (!bar || !parent) return;
+    ev.preventDefault();
+    // 起点：已拖过用 pos，否则用当前实际位置（默认 CSS 居中所处的位置）
+    const br = bar.getBoundingClientRect();
+    const pr = parent.getBoundingClientRect();
+    const baseX = pos?.x ?? br.left - pr.left;
+    const baseY = pos?.y ?? br.top - pr.top;
+    dragRef.current = { startX: ev.clientX, startY: ev.clientY, baseX, baseY };
+    ev.currentTarget.setPointerCapture?.(ev.pointerId);
+  };
+
+  const onGripMove = (ev: React.PointerEvent<HTMLSpanElement>) => {
+    const d = dragRef.current;
+    const bar = barRef.current;
+    const parent = bar?.offsetParent as HTMLElement | null;
+    if (!d || !bar || !parent) return;
+    const pr = parent.getBoundingClientRect();
+    const maxX = Math.max(0, pr.width - bar.offsetWidth);
+    const maxY = Math.max(0, pr.height - bar.offsetHeight);
+    const x = Math.min(maxX, Math.max(0, d.baseX + (ev.clientX - d.startX)));
+    const y = Math.min(maxY, Math.max(0, d.baseY + (ev.clientY - d.startY)));
+    setPos({ x, y });
+  };
+
+  const onGripUp = (ev: React.PointerEvent<HTMLSpanElement>) => {
+    dragRef.current = null;
+    if (ev.currentTarget.hasPointerCapture?.(ev.pointerId)) {
+      ev.currentTarget.releasePointerCapture?.(ev.pointerId);
+    }
+  };
+
+  // 父容器尺寸变化（窗口缩放）后把越界的位置拉回容器内
+  useEffect(() => {
+    if (!pos) return;
+    const bar = barRef.current;
+    const parent = bar?.offsetParent as HTMLElement | null;
+    if (!bar || !parent) return;
+    const maxX = Math.max(0, parent.clientWidth - bar.offsetWidth);
+    const maxY = Math.max(0, parent.clientHeight - bar.offsetHeight);
+    if (pos.x > maxX || pos.y > maxY) {
+      setPos({ x: Math.min(pos.x, maxX), y: Math.min(pos.y, maxY) });
+    }
+  }, [pos]);
+
   return (
-    <div className="pdf-ink-bar" role="toolbar" aria-label="PDF 画笔">
+    <div
+      ref={barRef}
+      className="pdf-ink-bar"
+      role="toolbar"
+      aria-label="PDF 画笔"
+      style={
+        pos
+          ? { left: pos.x, top: pos.y, bottom: "auto", transform: "none" }
+          : undefined
+      }
+    >
+      {/* D109：拖动手柄——按住可把工具栏移到阅读区任意位置（落到侧边也不挡正文） */}
+      <span
+        className="ib-grip"
+        role="button"
+        tabIndex={0}
+        aria-label="拖动画笔工具栏"
+        title="按住拖动工具栏"
+        onPointerDown={onGripDown}
+        onPointerMove={onGripMove}
+        onPointerUp={onGripUp}
+        onPointerCancel={onGripUp}
+        onDoubleClick={() => setPos(null)}
+      >
+        ⠿
+      </span>
       {/* ① 笔刷 */}
       <div className="ib-group" role="group" aria-label="笔刷">
         {BRUSH_META.map((b) => (

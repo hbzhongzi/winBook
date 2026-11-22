@@ -48,6 +48,17 @@ export function clampEraserSize(v: number): number {
   return Math.round(c / ERASER_SIZE_STEP) * ERASER_SIZE_STEP;
 }
 
+/**
+ * D109：橡皮范围光标直径（屏幕像素）。
+ * eraserSize 是「页面像素半径」，命中直径 = 2×半径；光标与命中范围一致，
+ * 故按 rect/page 缩放比例换算到屏幕像素。非法缩放（0/NaN）回落 1 避免光标消失。
+ */
+export function eraserCursorDiameter(eraserSize: number, scale: number): number {
+  const r = clampEraserSize(eraserSize);
+  const s = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return 2 * r * s;
+}
+
 /** 采样最小间距（CSS 像素）：过滤指针抖动产生的大量冗余点，控制存储体积 */
 export const MIN_POINT_DIST = 1.4;
 
