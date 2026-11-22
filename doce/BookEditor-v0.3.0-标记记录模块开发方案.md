@@ -1,7 +1,7 @@
 # BookEditor v0.3.0 —— 标记记录模块 开发方案
 
 > 状态：**T1–T12 实施完成 + D76–D104 真机反馈修复、体验增强与静态审查修正**（2026-11-22）。
-> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`，D100 = `13a4ab3`，D101 = `9c74ae1`，D102 = `c0bd409`，D103 = `c5c2bb6`，D104 = `待回填`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
+> 提交链：T1–T9 = `2ad7218`–`a575152`，T10 = `a31f2c0`；D76/D77 = `d4abaf6`，D79 = `f354434`，D80 = `2aeaf8a`，D81 = `17a9a11`，D82 = `b5c4048`，D83 = `d63b9b5`，D84 = `b53604b`，D85 = `935adec`，D85补/D86 = `0ec65ba`，D87 = `5bf6e47`，D88 = `da777f2`，D89 = `8cf60c7`，D90 = `510c97f`，D91 = `ef5a4ec`，D92 = `93f5eea`，D93 = `62aceec`，D95 = `967da35`，D96/D97 = `aaac6c7`，D98 = `c0f8457`，D100 = `13a4ab3`，D101 = `9c74ae1`，D102 = `c0bd409`，D103 = `c5c2bb6`，D104 = `39c909f`。**D94 未单独构建/提交**，其 `.content{min-width:0}` 保险并入 D95。**D99 未单独提交**（用户真机反馈后与 D100 一并修复）。
 > 验证：`tsc --noEmit` PASS；`vitest run` **277 例全绿**（marks 58 例，含 D76/D77 回归 2 例、D96 章节组织 5 例、D101 画笔数据 8 例；`pdfInk.test.ts` 21 例覆盖坐标缩放/采样/抽稀/橡皮擦命中/页内位置；`markDrag.test.ts` 6 例；D102 新增 `pdfScale.test.ts` 栏数解耦 4 例 + `settings.test.ts` `pdfColumns` 迁移 2 例；D103 新增 `epubHighlight.test.ts` 11 例 + `pdfScale.test.ts` 双栏倍率基准 4 例；**D104 移除被弃用的 `toSvgRect` 及其 2 例坐标换算测试 → 279→277**，过滤逻辑 9 例保留）；`go test ./...` ok；`wails build -platform windows/amd64` 成功（最新交付 `build/bin/book-editor-D104.exe`）。A83–A104 真机 GUI 断言：A91 已由 `smoke_marks.py` 自动化；A95 部分经真机确认（D88 翻页正文加载、D91 目录层级），EPUB 高亮 annotations 终验仍待；其余待真机执行。**D89 翻页划词工具条、D95 弹窗视觉、D98 悬停/右键、D100 双模式悬停与滚动选词、D101 PDF 画笔、D102 三项、D103 两项（高亮 rect 重画/双栏缩放基准）、D104 高亮坐标系修正，均待用户真机确认后方可标为通过。**
 > 取证通道：D87 起 EPUB 诊断自动节流落盘到 exe 同目录 `epub-diag.log`（`utils/epubDiag.ts` + Go `DiagLogPath()`/`WriteDiagLog()`），不再依赖点按钮；D76–D95 全部修复均据该日志定位。
 > 视觉基线：`doce/BookEditor-前端界面示例-v0.3.0-标记记录.html`（可交互；**§4.11 面板形态已由 D95 改为弹窗浮层，HTML 基线此点未同步更新**）。
@@ -267,6 +267,7 @@ markDefaultColor: MarkColor;
 - **正交维度不要塞进同一个枚举**（D102 教训）：栏数（铺几页）与适配方式（每页多大）是正交的，旧实现把「双页」做成 `pdfFit` 的取值，导致切适配方式必然踩掉栏数。凡两个维度可以独立取值，就是两个字段。
 - **第三方库的「去重/优化」逻辑必须验证语义，不能假设它是对的**（D103 教训）：`marks-pane` 的 `filteredRanges()` 用「被其它矩形包含即丢弃」做去重，单行选区看不出问题，跨块选区时 `getClientRects()` 会返回容器包围盒，于是逐行框全被吞掉、只剩一个大矩形 —— 渲染出来就是整块实心色块。凡依赖第三方几何/布局计算，先用最小用例验证其输出与预期一致，否则自己接管该步骤。
 - **同一个视觉 bug 可能有两条独立成因，必须分别验证**（D102/D103 教训）：EPUB 高亮「整块矩形」既有 D102 的 CSS 侧（SVG `<g>` 上的 `background` 按包围盒填色），又有 D103 的几何侧（rect 被错误去重）。只修一条不会好——用户第二次反馈正是证据。遇到「修了没效果」时，不要重复加固同一处，而要质疑「是否还有第二条路径」。
+- **接管第三方渲染时，只替换有缺陷的环节，其余环节原样复用**（D104 教训）：D103 为了修「矩形被错误去重」，把 marks-pane 的整个 `render()` 重写了，连带丢掉它正确的坐标换算（`r.left - offset.left + container.left` 中的 `+ container.left` 抵消容器偏移），引入新的整体偏移缺陷。正确做法是临时替换 `filteredRanges()` 再调用原 `render()`——**改一处、留一处**。跨坐标系尤其危险：`getClientRects()` 是 iframe 内文档视口坐标，`getBoundingClientRect()` 是宿主页面坐标，两者不可直接相减。
 
 ---
 
@@ -289,7 +290,7 @@ markDefaultColor: MarkColor;
 | T13 | D98–D102 体验增强：悬停/右键口径重定、双模式事件通道、PDF 画笔、高亮矩形修复、粗细滑块、单双栏解耦 | tsc/vitest/go test/build 全过 + 真机视觉确认 | 🔶 代码完成并提交 `c0f8457`(D98)/`13a4ab3`(D100)/`9c74ae1`(D101)，D102 交付 `build/bin/book-editor-D102.exe`；vitest 221→**264 例全绿**（D100 markDrag 6 例；D101 pdfInk 21 例 + marks 8 例；D102 pdfScale 栏数 4 例 + settings 迁移 2 例）；**真机视觉与交互全部待用户确认** |
 | T14 | D103 修复：EPUB 高亮 rect 重画 + PDF 双栏缩放基准 | tsc/vitest/build 全过 + 真机视觉确认 | 🔶 代码完成并提交 `c5c2bb6`，交付 `build/bin/book-editor-D103.exe`；vitest 264→**279 例全绿**（新增 `epubHighlight.test.ts` 11 例、`pdfScale.test.ts` 双栏基准 4 例）；**真机待确认**：滚动模式跨段划词是否逐行贴合、双栏 100% 是否铺满不溢出 |
 
-| T15 | D104 静态审查修正：高亮重画改用原 render 坐标系 | tsc/vitest/build 全过 + 真机不偏移 | 🔶 代码完成，交付 `build/bin/book-editor-D104.exe`；vitest 279→**277 例全绿**（移除 D103 弃用的 `toSvgRect` 2 例，过滤逻辑 9 例保留）；**真机待确认**：A102 高亮逐行贴合且**位置不整体偏移** |
+| T15 | D104 静态审查修正：高亮重画改用原 render 坐标系 | tsc/vitest/build 全过 + 真机不偏移 | 🔶 代码完成并提交 `39c909f`，交付 `build/bin/book-editor-D104.exe`；vitest 279→**277 例全绿**（移除 D103 弃用的 `toSvgRect` 2 例，过滤逻辑 9 例保留）；**真机待确认**：A102 高亮逐行贴合且**位置不整体偏移** |
 
 **DoD**：`tsc --noEmit` PASS ✅、`vitest run` 277 例全绿（marks 58 + pdfInk 21 + pdfScale 34 + settings 50 + epubHighlight 9 + markDrag 6 + 其余 99）✅、`go test ./...` ok ✅、`wails build -platform windows/amd64` 成功 ✅（最新交付 `book-editor-D104.exe`）、本文 §6/§7/§8 回填至 D104 ✅、D95 弹窗用户确认 ⏳、D89 翻页划词真机验证 ⏳、D98 悬停/右键真机 ⏳、D100 双模式悬停与滚动选词真机 ⏳、D101 PDF 画笔真机 ⏳、D102 三项（A99–A101）真机 ⏳、D103 两项（A102–A103）真机 ⏳、D104 高亮坐标系（A102）真机 ⏳、A83–A104 其余真机通过 ⏳、整合文档 §2/§11/§12 补 v0.3.0 行与 D65–D104 ⏳（下一步，未在本版范围）。
 
