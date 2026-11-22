@@ -65,6 +65,11 @@ export type PdfStroke = {
   baseH: number;
   /** 笔迹在页面上的起始纵向位置占页高比例（0~1），用于「按页内位置」排序 */
   top: number;
+  /**
+   * D107：笔迹透明度（0.05–1）。可选，缺省按笔刷默认（高亮 0.32 / 自由笔 1），
+   * 保证 D101–D106 的旧笔迹零回归。
+   */
+  alpha?: number;
 };
 
 /**
@@ -153,6 +158,12 @@ function normalizeStroke(raw: unknown): PdfStroke | null {
     clean.push(n);
   }
   const top = Number(r.top);
+  // D107：alpha 可选且向后兼容——非法值只回落默认（不丢弃整条笔迹）
+  const alphaRaw = r.alpha === undefined ? undefined : Number(r.alpha);
+  const alpha =
+    alphaRaw !== undefined && Number.isFinite(alphaRaw) && alphaRaw >= 0.05 && alphaRaw <= 1
+      ? alphaRaw
+      : undefined;
   return {
     brush: r.brush,
     color: r.color,
@@ -161,6 +172,7 @@ function normalizeStroke(raw: unknown): PdfStroke | null {
     baseW,
     baseH,
     top: Number.isFinite(top) ? Math.min(1, Math.max(0, top)) : 0,
+    ...(alpha !== undefined ? { alpha } : {}),
   };
 }
 

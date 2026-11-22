@@ -19,6 +19,7 @@ import {
   type InkRedoEntry,
 } from "../utils/pdfInkUndo";
 import type { PdfStroke } from "../utils/marks";
+import { BRUSH_ALPHA, ERASER_RADIUS } from "../utils/pdfInk";
 import { PDF_INK_COLORS, PDF_INK_HEX, type PdfBrush, type PdfInkColor } from "../utils/marks";
 import {
   FIT_LABELS,
@@ -731,6 +732,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     brush: "highlighter",
     color: "yellow",
     sizeScale: 1,
+    alpha: BRUSH_ALPHA.highlighter,
+    eraserSize: ERASER_RADIUS,
   });
   /** 每页草稿笔迹：page → strokes（落笔画完即入草稿，点「保存」才落库） */
   const [inkDrafts, setInkDrafts] = useState<Record<number, PdfStroke[]>>({});

@@ -4,8 +4,27 @@
 // - 未开启画笔时不渲染任何元素，PDF 阅读体验保持原样（不遮挡正文/不影响选中）；
 // - 开启后点「完成」或「保存」退出画笔模式，避免忘记退出导致无法拖拽选中文本；
 // - 工具顺序固定：高亮笔 / 自由笔 / 橡皮擦 —— 与用户确认的口径一致。
+//
+// D107 布局：五段式分组 —— 笔刷 | 颜色 | 样式 | 历史 | 动作。
+// 样式区随笔刷切换：高亮笔可调「粗细 + 深浅」，自由笔只调粗细，橡皮只调大小。
+// 这样所有可调参数都收在同一段里，不随功能增加而把工具栏横向撑爆。
 
-import { PDF_INK_COLORS, PDF_INK_HEX, type PdfBrush, type PdfInkColor } from "../utils/marks";
+import {
+  PDF_INK_COLORS,
+  PDF_INK_HEX,
+  type PdfBrush,
+  type PdfInkColor,
+} from "../utils/marks";
+import {
+  ERASER_SIZE_MAX,
+  ERASER_SIZE_MIN,
+  ERASER_SIZE_STEP,
+  INK_ALPHA_MAX,
+  INK_ALPHA_MIN,
+  INK_ALPHA_STEP,
+  clampEraserSize,
+  clampInkAlpha,
+} from "../utils/pdfInk";
 import type { InkTool } from "./PdfInkCanvas";
 
 const BRUSH_META: { key: Exclude<PdfBrush, "eraser">; label: string; title: string }[] = [
@@ -40,7 +59,7 @@ type Props = {
   /** 当前页是否已有笔迹（决定「清空本页」是否可用） */
   canClear: boolean;
   canUndo: boolean;
-  /** D106：是否有可恢复的一步（撤销后才可用） */
+  /** D106：是否有可恢复的一步 */
   canRedo: boolean;
   onChange: (patch: Partial<InkTool>) => void;
   onUndo: () => void;
@@ -65,8 +84,14 @@ export default function PdfInkToolbar({
   onClose,
 }: Props) {
   const isEraser = tool.brush === "eraser";
+  // 手改 localStorage / 旧配置可能带来越界值，显示与写入都先钳制
+  const size = clampSize(tool.sizeScale);
+  const alpha = clampInkAlpha(tool.alpha);
+  const eraserSize = clampEraserSize(tool.eraserSize);
+
   return (
     <div className="pdf-ink-bar" role="toolbar" aria-label="PDF 画笔">
+      {/* ① 笔刷 */}
       <div className="ib-group" role="group" aria-label="笔刷">
         {BRUSH_META.map((b) => (
           <button
@@ -83,7 +108,7 @@ export default function PdfInkToolbar({
         <button
           type="button"
           className={"ib-btn" + (isEraser ? " on" : "")}
-          title="橡皮擦：划过笔迹即擦除"
+          title="橡皮擦：划过笔迹即擦除，大小可调"
           aria-pressed={isEraser}
           onClick={() => onChange({ brush: "eraser" })}
         >
@@ -91,11 +116,11 @@ export default function PdfInkToolbar({
         </button>
       </div>
 
-      {/* 橡皮擦不使用颜色与粗细，隐藏以减少干扰 */}
+      {/* ② 颜色（橡皮擦不用颜色，隐藏以减少干扰） */}
       {!isEraser && (
         <>
           <div className="ib-sep" />
-          <div className="ib-group" role="group" aria-label="颜色">
+          <div className="ib-group ib-color" role="group" aria-label="颜色">
             {PDF_INK_COLORS.map((c: PdfInkColor) => (
               <button
                 key={c}
@@ -109,29 +134,73 @@ export default function PdfInkToolbar({
               />
             ))}
           </div>
-          <div className="ib-sep" />
-          <div className="ib-group ib-size" role="group" aria-label="粗细">
-            <span className="ib-size-label">粗细</span>
-            <input
-              type="range"
-              className="ib-range"
-              min={SIZE_MIN}
-              max={SIZE_MAX}
-              step={SIZE_STEP}
-              value={clampSize(tool.sizeScale)}
-              aria-label="笔刷粗细"
-              aria-valuemin={SIZE_MIN}
-              aria-valuemax={SIZE_MAX}
-              aria-valuenow={clampSize(tool.sizeScale)}
-              onChange={(e) => onChange({ sizeScale: clampSize(Number(e.target.value)) })}
-            />
-            <span className="ib-size-val">
-              {widthOf(tool.brush === "eraser" ? "pen" : tool.brush, clampSize(tool.sizeScale)).toFixed(1)}
-            </span>
-          </div>
         </>
       )}
 
+      {/* ③ 样式：高亮=粗细+深浅，自由笔=粗细，橡皮=大小 */}
+      <div className="ib-sep" />
+      <div className="ib-group ib-style" role="group" aria-label="样式">
+        {!isEraser ? (
+          <>
+            <div className="ib-field">
+              <span className="ib-field-label">粗细</span>
+              <input
+                type="range"
+                className="ib-range"
+                min={SIZE_MIN}
+                max={SIZE_MAX}
+                step={SIZE_STEP}
+                value={size}
+                aria-label="笔刷粗细"
+                aria-valuemin={SIZE_MIN}
+                aria-valuemax={SIZE_MAX}
+                aria-valuenow={size}
+                onChange={(e) => onChange({ sizeScale: clampSize(Number(e.target.value)) })}
+              />
+              <span className="ib-field-val">{widthOf(tool.brush, size).toFixed(1)}</span>
+            </div>
+            {tool.brush === "highlighter" && (
+              <div className="ib-field">
+                <span className="ib-field-label">深浅</span>
+                <input
+                  type="range"
+                  className="ib-range"
+                  min={INK_ALPHA_MIN}
+                  max={INK_ALPHA_MAX}
+                  step={INK_ALPHA_STEP}
+                  value={alpha}
+                  aria-label="高亮深浅"
+                  aria-valuemin={INK_ALPHA_MIN}
+                  aria-valuemax={INK_ALPHA_MAX}
+                  aria-valuenow={alpha}
+                  onChange={(e) => onChange({ alpha: clampInkAlpha(Number(e.target.value)) })}
+                />
+                <span className="ib-field-val">{Math.round(alpha * 100)}%</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="ib-field">
+            <span className="ib-field-label">橡皮</span>
+            <input
+              type="range"
+              className="ib-range"
+              min={ERASER_SIZE_MIN}
+              max={ERASER_SIZE_MAX}
+              step={ERASER_SIZE_STEP}
+              value={eraserSize}
+              aria-label="橡皮大小"
+              aria-valuemin={ERASER_SIZE_MIN}
+              aria-valuemax={ERASER_SIZE_MAX}
+              aria-valuenow={eraserSize}
+              onChange={(e) => onChange({ eraserSize: clampEraserSize(Number(e.target.value)) })}
+            />
+            <span className="ib-field-val">{eraserSize}px</span>
+          </div>
+        )}
+      </div>
+
+      {/* ④ 历史 */}
       <div className="ib-sep" />
       <div className="ib-group">
         <button type="button" className="ib-btn" disabled={!canUndo} onClick={onUndo} title="撤销上一笔（双栏可见页内，右页优先）">
@@ -157,6 +226,7 @@ export default function PdfInkToolbar({
         </button>
       </div>
 
+      {/* ⑤ 动作 */}
       <div className="ib-sep" />
       <div className="ib-group ib-actions">
         <button

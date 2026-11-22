@@ -6,15 +6,19 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  BRUSH_ALPHA,
   BRUSH_WIDTH,
   MIN_POINT_DIST,
   decimate,
   distToSegmentSq,
   hitStrokes,
+  paintStroke,
   pushPoint,
   scaledPoints,
   strokeScale,
   strokeTop,
+  clampEraserSize,
+  clampInkAlpha,
 } from "../../utils/pdfInk";
 import type { PdfStroke } from "../../utils/marks";
 
@@ -154,5 +158,50 @@ describe("D101：页内位置与常量", () => {
 
   it("荧光笔比自由笔粗（视觉口径）", () => {
     expect(BRUSH_WIDTH.highlighter).toBeGreaterThan(BRUSH_WIDTH.pen);
+  });
+});
+
+describe("D107：颜色深浅与橡皮大小可调", () => {
+  it("深浅钳制到 [0.05, 1]，默认 0.32 不被步进改写", () => {
+    expect(clampInkAlpha(0.32)).toBe(0.32);
+    expect(clampInkAlpha(0)).toBe(0.05);
+    expect(clampInkAlpha(2)).toBe(1);
+    expect(clampInkAlpha(Number.NaN)).toBe(BRUSH_ALPHA.highlighter);
+  });
+
+  it("橡皮大小钳制到 [4, 24]，非法值回落默认 10", () => {
+    expect(clampEraserSize(10)).toBe(10);
+    expect(clampEraserSize(1)).toBe(4);
+    expect(clampEraserSize(99)).toBe(24);
+    expect(clampEraserSize(Number.NaN)).toBe(10);
+  });
+
+  it("绘制优先用笔迹自带 alpha，旧笔迹回落笔刷默认（向后兼容）", () => {
+    // canvas 在 jsdom 不可用：用最小 stub 捕获每次赋给 globalAlpha 的值
+    const captured: number[] = [];
+    const ctx = {
+      save() {},
+      restore() {},
+      beginPath() {},
+      moveTo() {},
+      lineTo() {},
+      quadraticCurveTo() {},
+      stroke() {},
+      clearRect() {},
+      canvas: { width: 100, height: 200 },
+      strokeStyle: "",
+      lineWidth: 0,
+      lineCap: "",
+      lineJoin: "",
+      set globalAlpha(v: number) {
+        captured.push(v);
+      },
+    } as unknown as CanvasRenderingContext2D;
+
+    const deep = stroke({ brush: "highlighter", alpha: 0.7 });
+    const legacy = stroke({ brush: "highlighter" }); // D101–D106 旧笔迹无 alpha
+    paintStroke(ctx, deep, 100, 200);
+    paintStroke(ctx, legacy, 100, 200);
+    expect(captured).toEqual([0.7, BRUSH_ALPHA.highlighter]);
   });
 });

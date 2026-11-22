@@ -18,14 +18,35 @@ export const BRUSH_WIDTH: Record<"highlighter" | "pen", number> = {
   pen: 2.5,
 };
 
-/** 半透明笔触透明度：荧光笔透（能看清字），自由笔实（看得清线） */
+/** 半透明笔触透明度：荧光笔透（能看清字），自由笔实（看得清线）；也是 D107 深浅滑块的默认值 */
 export const BRUSH_ALPHA: Record<"highlighter" | "pen", number> = {
   highlighter: 0.32,
   pen: 1,
 };
 
-/** 橡皮擦判定半径（CSS 像素）：比实际线宽宽松，好擦 */
+/** D107：深浅可调范围与步进（0.05–1，默认跟随笔刷） */
+export const INK_ALPHA_MIN = 0.05;
+export const INK_ALPHA_MAX = 1;
+export const INK_ALPHA_STEP = 0.05;
+
+/** 深浅钳制：非法值回落默认；合法值原样保留（默认 0.32 不必对齐 0.05 步进） */
+export function clampInkAlpha(v: number, fallback = BRUSH_ALPHA.highlighter): number {
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(INK_ALPHA_MAX, Math.max(INK_ALPHA_MIN, v));
+}
+
+/** 橡皮擦判定半径（CSS 像素）：比实际线宽宽松，好擦（D107 起可由工具栏调节） */
 export const ERASER_RADIUS = 10;
+export const ERASER_SIZE_MIN = 4;
+export const ERASER_SIZE_MAX = 24;
+export const ERASER_SIZE_STEP = 1;
+
+/** 橡皮大小钳制：非法值回落默认 10 */
+export function clampEraserSize(v: number): number {
+  if (!Number.isFinite(v)) return ERASER_RADIUS;
+  const c = Math.min(ERASER_SIZE_MAX, Math.max(ERASER_SIZE_MIN, v));
+  return Math.round(c / ERASER_SIZE_STEP) * ERASER_SIZE_STEP;
+}
 
 /** 采样最小间距（CSS 像素）：过滤指针抖动产生的大量冗余点，控制存储体积 */
 export const MIN_POINT_DIST = 1.4;
@@ -80,7 +101,8 @@ export function paintStroke(
   if (pts.length < 4) return;
   const s = strokeScale(stroke, pageW, pageH);
   ctx.save();
-  ctx.globalAlpha = BRUSH_ALPHA[stroke.brush];
+  // D107：优先用笔迹自带 alpha（用户调过的深浅）；旧笔迹无该字段时回落笔刷默认
+  ctx.globalAlpha = stroke.alpha ?? BRUSH_ALPHA[stroke.brush];
   ctx.strokeStyle = PDF_INK_HEX[stroke.color];
   ctx.lineWidth = Math.max(0.5, stroke.width * s);
   ctx.lineCap = "round";

@@ -665,6 +665,37 @@ describe("D101：PDF 画笔笔迹", () => {
     expect(loc.strokes![0].baseW).toBe(800);
   });
 
+  it("D107：合法 alpha 被保留，非法值只回落默认而不丢弃笔迹", () => {
+    const locOf = (alpha: unknown) =>
+      mkInkMark([mkStroke({ brush: "highlighter", alpha })])!.locator;
+
+    const ok = locOf(0.7);
+    if (ok.kind !== "pdf") return;
+    expect(ok.strokes![0].alpha).toBe(0.7);
+
+    // 边界值保留
+    const lo = locOf(0.05);
+    if (lo.kind === "pdf") expect(lo.strokes![0].alpha).toBe(0.05);
+    const hi = locOf(1);
+    if (hi.kind === "pdf") expect(hi.strokes![0].alpha).toBe(1);
+
+    // 越界 / 非数字 / NaN / null 一律回落 undefined，但笔迹本身仍在
+    for (const bad of [0, 1.5, Number.NaN, "deep", null]) {
+      const loc = locOf(bad);
+      if (loc.kind !== "pdf") continue;
+      expect(loc.strokes).toHaveLength(1);
+      expect(loc.strokes![0].alpha).toBeUndefined();
+    }
+  });
+
+  it("D107：旧笔迹无 alpha 字段仍正常保留（零回归）", () => {
+    const loc = mkInkMark([mkStroke()])!.locator;
+    if (loc.kind !== "pdf") return;
+    expect(loc.strokes).toHaveLength(1);
+    expect(loc.strokes![0].alpha).toBeUndefined();
+    expect(loc.strokes![0].brush).toBe("pen");
+  });
+
   it("无笔迹的纯书签条目不写 strokes 字段（兼容旧数据）", () => {
     const m = mkInkMark([]);
     const loc = m!.locator;

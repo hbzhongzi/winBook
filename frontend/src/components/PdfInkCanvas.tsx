@@ -13,8 +13,8 @@ import type { MutableRefObject } from "react";
 import type { PdfInkColor, PdfBrush, PdfStroke } from "../utils/marks";
 import {
   BRUSH_WIDTH,
-  ERASER_RADIUS,
   MAX_POINTS_TOTAL,
+  clampEraserSize,
   decimate,
   hitStrokes,
   paintStroke,
@@ -30,6 +30,10 @@ export type InkTool = {
   color: PdfInkColor;
   /** 相对线宽倍率（1 = 默认） */
   sizeScale: number;
+  /** D107：笔迹透明度（0.05–1），仅高亮笔写入；自由笔恒实色 */
+  alpha: number;
+  /** D107：橡皮擦判定半径（4–24 CSS px） */
+  eraserSize: number;
 };
 
 export type InkCanvasProps = {
@@ -156,6 +160,8 @@ export default function InkCanvas({
       baseW: w,
       baseH: h,
       top: strokeTop(pts, h),
+      // D107：高亮笔写入用户调过的深浅；自由笔不写，回放时走 BRUSH_ALPHA.pen（实色）
+      ...(t.brush === "highlighter" ? { alpha: t.alpha } : {}),
     };
     drawingRef.current = { pts, stroke };
   };
@@ -208,10 +214,11 @@ export default function InkCanvas({
 
   /** 橡皮擦：命中即删（一次拖拽内同一条只删一次） */
   const eraseAt = (x: number, y: number) => {
-    const { pageW: w, pageH: h } = latest.current;
+    const { pageW: w, pageH: h, tool: t } = latest.current;
     const all = allStrokes();
     if (all.length === 0) return;
-    const hits = hitStrokes(all, x, y, ERASER_RADIUS, w, h);
+    // D107：橡皮半径跟随工具栏调节（钳制防手改状态越界）
+    const hits = hitStrokes(all, x, y, clampEraserSize(t.eraserSize), w, h);
     if (hits.length === 0) return;
     const seen = erasingRef.current;
     const toDrop = new Set<number>();

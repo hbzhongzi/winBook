@@ -273,8 +273,8 @@ pre.txt-viewer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 6px;
+  padding: 7px 10px;
   max-width: calc(100% - 32px);
   border-radius: 12px;
   border: 1px solid var(--border-soft);
@@ -284,7 +284,7 @@ pre.txt-viewer {
 .pdf-ink-bar .ib-group { display: flex; align-items: center; gap: 4px; }
 .pdf-ink-bar .ib-sep { width: 1px; height: 18px; background: var(--border-soft); }
 .pdf-ink-bar .ib-btn {
-  padding: 5px 9px;
+  padding: 4px 8px;
   font-size: 12px;
   border-radius: 6px;
   border: 1px solid transparent;
@@ -307,10 +307,12 @@ pre.txt-viewer {
   cursor: pointer;
 }
 .pdf-ink-bar .ib-dot.on { border-color: var(--text); transform: scale(1.12); }
-/* D102：粗细由三档按钮改为连续滑块（可微调，附实时像素读数） */
-.pdf-ink-bar .ib-size { gap: 6px; }
-.pdf-ink-bar .ib-size-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
-.pdf-ink-bar .ib-size-val {
+/* D107：样式区按笔刷切换（高亮=粗细+深浅 / 自由笔=粗细 / 橡皮=大小）。
+   用统一的 ib-field 包住「标签 + 滑块 + 读数」，避免每加一个参数就多一组专用类。 */
+.pdf-ink-bar .ib-style { gap: 10px; }
+.pdf-ink-bar .ib-field { display: flex; align-items: center; gap: 5px; }
+.pdf-ink-bar .ib-field-label { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+.pdf-ink-bar .ib-field-val {
   min-width: 30px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -318,7 +320,7 @@ pre.txt-viewer {
   text-align: right;
 }
 .pdf-ink-bar .ib-range {
-  width: 92px;
+  width: 76px;
   height: 16px;
   margin: 0;
   accent-color: var(--accent);
