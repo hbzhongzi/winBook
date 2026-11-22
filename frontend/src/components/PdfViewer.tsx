@@ -9,6 +9,12 @@ import type { PositionReport } from "../utils/library";
 import type { MarksContext } from "./marksContext";
 import InkCanvas, { type InkTool } from "./PdfInkCanvas";
 import PdfInkToolbar from "./PdfInkToolbar";
+import {
+  canClearInk,
+  canUndoInk,
+  undoTargetPage,
+  visiblePages,
+} from "../utils/pdfInkUndo";
 import type { PdfStroke } from "../utils/marks";
 import { PDF_INK_COLORS, PDF_INK_HEX, type PdfBrush, type PdfInkColor } from "../utils/marks";
 import {
@@ -750,19 +756,40 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
   const inkDirty = Object.values(inkDrafts).some((s) => s.length > 0);
   const inkDraftTotal = Object.values(inkDrafts).reduce((n, s) => n + s.length, 0);
 
-  /** 撤销：删掉当前页最后一笔（先撤草稿，草稿空了再撤该页已落库的标记） */
+  /**
+   * 当前画笔操作覆盖的页（D105）：翻页单栏 = [current]，双栏 = [current, current+1]；
+   * 滚动模式 = [scrollCurrent]。解决此前双栏右页笔迹无法撤销/清空的问题。
+   */
+  const inkPages = useCallback((): number[] => {
+    if (isScroll) return [scrollCurrentRef.current];
+    return visiblePages(current, settingsRef.current.pdfColumns);
+  }, [isScroll, current]);
+
+  /** 可见页中是否有已落库笔迹 */
+  const inkHasSaved = useCallback(
+    (page: number): boolean => inkStrokesOf(page).length > 0,
+    [inkStrokesOf]
+  );
+
+  /** 撤销：在可见页里找草稿最多的页（右页优先），撤它最后一笔；再退到已落库笔迹 */
   const undoInk = useCallback(() => {
-    const page = isScroll ? scrollCurrentRef.current : current;
-    const draft = inkDrafts[page] ?? [];
+    const ctx = marksCtxRef.current;
+    const pages = inkPages();
+    const target = undoTargetPage(
+      pages,
+      (p) => inkDrafts[p]?.length ?? 0,
+      (p) => inkStrokesOf(p).length > 0
+    );
+    if (target === null) return;
+    const draft = inkDrafts[target] ?? [];
     if (draft.length > 0) {
-      setDraftFor(page, draft.slice(0, -1));
+      setDraftFor(target, draft.slice(0, -1));
       return;
     }
-    // 草稿已空：找该页最后一个带笔迹的标记，削掉最后一笔
-    const ctx = marksCtxRef.current;
     if (!ctx) return;
+    // 草稿已空：找该页最后一个带笔迹的标记，削掉最后一笔
     const candidates = ctx.marks.filter(
-      (m) => m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0
+      (m) => m.locator.kind === "pdf" && m.locator.page === target && (m.locator.strokes?.length ?? 0) > 0
     );
     const last = candidates[candidates.length - 1];
     if (!last || last.locator.kind !== "pdf") return;
@@ -773,20 +800,22 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     } else {
       ctx.onDelete(last.id);
     }
-  }, [isScroll, current, inkDrafts, setDraftFor]);
+  }, [inkPages, inkDrafts, inkStrokesOf, setDraftFor]);
 
-  /** 清空当前页画笔（草稿 + 已落库该页笔迹标记） */
+  /** 清空可见页画笔（草稿 + 已落库该页笔迹标记） */
   const clearInkPage = useCallback(() => {
-    const page = isScroll ? scrollCurrentRef.current : current;
-    setDraftFor(page, []);
     const ctx = marksCtxRef.current;
-    if (!ctx) return;
-    for (const m of ctx.marks) {
-      if (m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0) {
-        ctx.onDelete(m.id);
+    const pages = inkPages();
+    for (const page of pages) {
+      setDraftFor(page, []);
+      if (!ctx) continue;
+      for (const m of ctx.marks) {
+        if (m.locator.kind === "pdf" && m.locator.page === page && (m.locator.strokes?.length ?? 0) > 0) {
+          ctx.onDelete(m.id);
+        }
       }
     }
-  }, [isScroll, current, setDraftFor]);
+  }, [inkPages, setDraftFor]);
 
   /** 保存：把各页草稿落库。同页已有笔迹标记则追加进去，否则新建标记。 */
   const saveInk = useCallback(() => {
@@ -1010,8 +1039,8 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           <PdfInkToolbar
             tool={inkTool}
             draftCount={inkDraftTotal}
-            canClear={(inkDrafts[scrollCurrent]?.length ?? 0) > 0 || inkStrokesOf(scrollCurrent).length > 0}
-            canUndo={(inkDrafts[scrollCurrent]?.length ?? 0) > 0 || inkStrokesOf(scrollCurrent).length > 0}
+            canClear={canClearInk([scrollCurrent], (p) => inkDrafts[p]?.length ?? 0, inkHasSaved)}
+            canUndo={canUndoInk([scrollCurrent], (p) => inkDrafts[p]?.length ?? 0, inkHasSaved)}
             onChange={(patch) => setInkTool((t) => ({ ...t, ...patch }))}
             onUndo={undoInk}
             onClearPage={clearInkPage}
@@ -1101,8 +1130,16 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
         <PdfInkToolbar
           tool={inkTool}
           draftCount={inkDraftTotal}
-          canClear={(inkDrafts[current]?.length ?? 0) > 0 || inkStrokesOf(current).length > 0}
-          canUndo={(inkDrafts[current]?.length ?? 0) > 0 || inkStrokesOf(current).length > 0}
+          canClear={canClearInk(
+            visiblePages(current, settings.pdfColumns),
+            (p) => inkDrafts[p]?.length ?? 0,
+            inkHasSaved
+          )}
+          canUndo={canUndoInk(
+            visiblePages(current, settings.pdfColumns),
+            (p) => inkDrafts[p]?.length ?? 0,
+            inkHasSaved
+          )}
           onChange={(patch) => setInkTool((t) => ({ ...t, ...patch }))}
           onUndo={undoInk}
           onClearPage={clearInkPage}

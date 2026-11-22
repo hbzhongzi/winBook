@@ -1156,9 +1156,10 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
     ) {
       return;
     }
-    // 读取逐行矩形，只做过滤：去掉完全重复项与零面积项，**保留被包含的逐行框**。
+    // 读取逐行矩形，只做过滤：丢零面积/重复项/容器大框，保留贴合文字的逐行框。
     // 坐标换算交给原 render，这里不碰。详见 utils/epubHighlight.ts 顶部说明。
-    const rects = filterRects(Array.from(range.getClientRects()) as RectLike[]);
+    const allRects = Array.from(range.getClientRects()) as RectLike[];
+    const rects = filterRects(allRects);
     if (rects.length === 0) return;
 
     const patched = m as { filteredRanges: () => RectLike[] };
@@ -1174,19 +1175,24 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
       else delete (m as { filteredRanges?: () => RectLike[] }).filteredRanges;
     }
 
-    // 圆角 + 颜色写到每个 <rect>（D103 防御性措施保留）：即使书籍 CSS 对 <g>
-    // 设了 fill，每一行颜色也始终一致。
+    // 颜色兜底（D105）：attributes 可能不含 fill（截图出现灰色高亮即此因）。
+    // 按 <g data-id> 反查 marks 里的真实颜色，保证任何路径下都有正确填充色。
+    const id = g.getAttribute("data-id") ?? "";
+    const own = marksCtxRef.current?.marks.find((x) => x.id === id);
+    const fills = own && own.color ? MARK_HL_FILLS[own.color] : undefined;
     const attrs = m.attributes ?? {};
+    const fill = fills?.fill ?? attrs.fill;
+    const fillOpacity = fills?.["fill-opacity"] ?? attrs["fill-opacity"];
     g.querySelectorAll("rect").forEach((el) => {
       el.setAttribute("rx", "2");
-      if (attrs.fill) el.setAttribute("fill", attrs.fill);
-      if (attrs["fill-opacity"]) el.setAttribute("fill-opacity", attrs["fill-opacity"]);
+      if (fill) el.setAttribute("fill", fill);
+      if (fillOpacity) el.setAttribute("fill-opacity", fillOpacity);
     });
 
     const gb = g.getBoundingClientRect();
     epubDiag(
       "HL_REPAINT",
-      `id=${g.getAttribute("data-id") ?? "-"} rects=${rects.length} g=${Math.round(gb.width)}x${Math.round(gb.height)}`
+      `id=${id || "-"} rects=${rects.length}/${allRects.length} g=${Math.round(gb.width)}x${Math.round(gb.height)} fill=${fill ?? "none"}`
     );
   };
 
