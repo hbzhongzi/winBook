@@ -64,8 +64,23 @@ type EpubRendition = {
     remove: (cfiRange: string, type: string) => void;
   };
   getRange?: (cfi: string) => Range | undefined;
-  views?: () => EpubView[];
+  /**
+   * epubjs 的 rendition.views() 返回 Views **管理器**对象（有 all()/first()/find(section)），
+   * 不是数组！D108 之前被误标为 () => EpubView[]，导致 .find(回调) 恒返回 undefined。
+   * 取数组一律走 manager.views.all()，见 allViews()。
+   */
+  views?: () => { all: () => EpubView[] };
 };
+
+/**
+ * D108：取已渲染 view 数组的唯一正确入口。
+ * epubjs 的 Views.find(section) 接受 section 对象（读 .index），不是数组 find 回调——
+ * 把箭头函数传进去会被当成 section，.index 为 undefined 恒不匹配，Contents 永远找不到。
+ * 三处历史调用（章节归属 / 划词 CFI / 右键补装）都栽在这里，统一收敛到本函数。
+ */
+function allViews(rendition: EpubRendition | null | undefined): EpubView[] {
+  return rendition?.manager?.views?.all?.() ?? [];
+}
 /** annotations.add 返回值（epub.js Annotation）：mark.element 为已挂载的 <g> */
 type EpubAnnotation = {
   cfiRange: string;
@@ -1005,7 +1020,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
 
   /** 选区所在章节信息：href 取 toc 目标 href（面板分组脚注用），chapter 取目录 label */
   const chapterInfoForDoc = (doc: Document): { href: string; chapter: string } => {
-    const view = renditionRef.current?.views?.().find((v) => {
+    const view = allViews(renditionRef.current).find((v) => {
       try {
         return v.contents?.document === doc;
       } catch {
@@ -1709,7 +1724,11 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               onHover: scheduleHover,
               onDragSelect: (doc, range) => {
                 // cfi 由所在视图的 Contents 反算（epub.js 6571）
-                let contents = renditionRef.current?.views?.().find((v) => {
+                // D108：必须走 manager.views.all()——rendition.views() 是 Views 管理器，
+                // 其 find(section) 收 section 对象而非回调，旧代码 .find(回调) 恒 undefined
+                // → contents=0 → cfi=0 → SELECT_DROP reason=cfi（日志 contents=0 铁证）。
+                const views = allViews(renditionRef.current);
+                let contents = views.find((v) => {
                   try {
                     return v.contents?.document === doc;
                   } catch {
@@ -1719,7 +1738,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
                 // D106 fallback：doc 可能来自回收中的旧 iframe，改用 range 实际所属文档再找一次
                 if (!contents) {
                   const owner = range.startContainer.ownerDocument;
-                  contents = renditionRef.current?.views?.().find((v) => {
+                  contents = views.find((v) => {
                     try {
                       return v.contents?.document === owner;
                     } catch {
@@ -1735,7 +1754,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
                 }
                 epubDiag(
                   "DRAG_CFI",
-                  `len=${range.toString().length} contents=${contents ? 1 : 0} cfi=${cfi ? 1 : 0}`
+                  `len=${range.toString().length} views=${views.length} contents=${contents ? 1 : 0} cfi=${cfi ? 1 : 0}`
                 );
                 handleSelection(doc, range, cfi);
               },
@@ -1928,7 +1947,7 @@ export default function EpubViewer({ dataBase64, settings, mode, onChapterChange
               /* 清理：文档随视图销毁，无需逐章 remove */
             });
             const installAll = () => {
-              rendition.views?.().forEach((v) => {
+              allViews(rendition).forEach((v) => {
                 try {
                   const d = v.contents?.document;
                   if (d) installCtx(d);

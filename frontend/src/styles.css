@@ -326,6 +326,20 @@ pre.txt-viewer {
   accent-color: var(--accent);
   cursor: pointer;
 }
+/* D108：橡皮范围示例（实心圆=擦除覆盖，虚线圈=最大范围参考） */
+.pdf-ink-bar .ib-eraser-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+.pdf-ink-bar .ib-range-scale {
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
 .pdf-footer {
   position: absolute;
   bottom: 10px;

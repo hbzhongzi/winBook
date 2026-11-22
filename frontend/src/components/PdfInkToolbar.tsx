@@ -52,6 +52,48 @@ export function clampSize(v: number): number {
   return Math.min(SIZE_MAX, Math.max(SIZE_MIN, Math.round(v * 10) / 10));
 }
 
+/**
+ * D108：橡皮范围示例。
+ * eraserSize 是命中「半径」（见 pdfInk.hitStrokes 的 r），故实际擦除覆盖直径 = 2×r。
+ * 示例用固定 26px 视窗 + 内圆按 (直径 / 最大直径) 比例缩放，外面再画一个虚线圈表示
+ * 命中边界，让用户直观看到「当前能擦多大范围」，而不是只看到 4–24 的抽象数字。
+ */
+function EraserPreview({ radius }: { radius: number }) {
+  const diameter = radius * 2;
+  const maxDiameter = ERASER_SIZE_MAX * 2;
+  const box = 26;
+  const scale = box / maxDiameter;
+  const r = Math.max(2, (diameter * scale) / 2);
+  return (
+    <span
+      className="ib-eraser-preview"
+      title={"示例：擦除直径约 " + diameter + "px（半径 " + radius + "px）"}
+      aria-label={"橡皮范围示例，直径约 " + diameter + " 像素"}
+    >
+      <svg width={box} height={box} viewBox={"0 0 " + box + " " + box}>
+        <circle
+          cx={box / 2}
+          cy={box / 2}
+          r={r}
+          fill="var(--accent)"
+          fillOpacity="0.35"
+          stroke="var(--accent)"
+          strokeWidth="1"
+        />
+        <circle
+          cx={box / 2}
+          cy={box / 2}
+          r={box / 2 - 1}
+          fill="none"
+          stroke="var(--text-3)"
+          strokeWidth="1"
+          strokeDasharray="2 2"
+        />
+      </svg>
+    </span>
+  );
+}
+
 type Props = {
   tool: InkTool;
   /** 草稿笔数（未保存） */
@@ -182,6 +224,7 @@ export default function PdfInkToolbar({
         ) : (
           <div className="ib-field">
             <span className="ib-field-label">橡皮</span>
+            <EraserPreview radius={eraserSize} />
             <input
               type="range"
               className="ib-range"
@@ -196,6 +239,9 @@ export default function PdfInkToolbar({
               onChange={(e) => onChange({ eraserSize: clampEraserSize(Number(e.target.value)) })}
             />
             <span className="ib-field-val">{eraserSize}px</span>
+            <span className="ib-range-scale" aria-hidden="true">
+              {ERASER_SIZE_MIN}–{ERASER_SIZE_MAX}
+            </span>
           </div>
         )}
       </div>
