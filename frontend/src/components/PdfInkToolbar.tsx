@@ -9,7 +9,7 @@
 // 样式区随笔刷切换：高亮笔可调「粗细 + 深浅」，自由笔只调粗细，橡皮只调大小。
 // 这样所有可调参数都收在同一段里，不随功能增加而把工具栏横向撑爆。
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   PDF_INK_COLORS,
   PDF_INK_HEX,
@@ -27,6 +27,7 @@ import {
   clampInkAlpha,
 } from "../utils/pdfInk";
 import type { InkTool } from "./PdfInkCanvas";
+import { inkDockSide, inkDockX, type InkDockSide } from "../utils/inkToolbar";
 
 const BRUSH_META: { key: Exclude<PdfBrush, "eraser">; label: string; title: string }[] = [
   { key: "highlighter", label: "高亮", title: "高亮笔：半透明粗笔，不挡原文" },
@@ -133,8 +134,12 @@ export default function PdfInkToolbar({
   const eraserSize = clampEraserSize(tool.eraserSize);
 
   // D109：工具栏可拖动。pos 为 null 时用 CSS 默认（底部居中）；拖动后写绝对 left/top。
+  // D112：拖到阅读区左/右边缘时 dock 变为 left/right，工具栏切纵向，少挡正文。
   const barRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [dock, setDock] = useState<InkDockSide>(null);
+  const posRef = useRef(pos);
+  posRef.current = pos;
   const dragRef = useRef<{
     startX: number;
     startY: number;
@@ -171,6 +176,12 @@ export default function PdfInkToolbar({
   };
 
   const onGripUp = (ev: React.PointerEvent<HTMLSpanElement>) => {
+    // D112：松手时按落点判定靠边停靠；横/纵切换后的重新贴边交给下面的 layout effect
+    const bar = barRef.current;
+    const parent = bar?.offsetParent as HTMLElement | null;
+    if (bar && parent && pos) {
+      setDock(inkDockSide(pos.x, bar.offsetWidth, parent.clientWidth));
+    }
     dragRef.current = null;
     if (ev.currentTarget.hasPointerCapture?.(ev.pointerId)) {
       ev.currentTarget.releasePointerCapture?.(ev.pointerId);
@@ -190,10 +201,24 @@ export default function PdfInkToolbar({
     }
   }, [pos]);
 
+  // D112：横/纵切换后宽度变化，按新宽度重新贴边（纵向）或钳回容器（横向）。
+  // 依赖只放 dock：拖动过程中的 pos 已由 onGripMove 钳制，无需在这里反复写回。
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const parent = bar?.offsetParent as HTMLElement | null;
+    const p = posRef.current;
+    if (!bar || !parent || !p) return;
+    const maxX = Math.max(0, parent.clientWidth - bar.offsetWidth);
+    const maxY = Math.max(0, parent.clientHeight - bar.offsetHeight);
+    const x = dock ? inkDockX(dock, bar.offsetWidth, parent.clientWidth) : Math.min(p.x, maxX);
+    const y = Math.min(p.y, maxY);
+    if (x !== p.x || y !== p.y) setPos({ x, y });
+  }, [dock]);
+
   return (
     <div
       ref={barRef}
-      className="pdf-ink-bar"
+      className={"pdf-ink-bar" + (dock ? " vertical" : "")}
       role="toolbar"
       aria-label="PDF 画笔"
       style={
@@ -213,7 +238,10 @@ export default function PdfInkToolbar({
         onPointerMove={onGripMove}
         onPointerUp={onGripUp}
         onPointerCancel={onGripUp}
-        onDoubleClick={() => setPos(null)}
+        onDoubleClick={() => {
+          setPos(null);
+          setDock(null);
+        }}
       >
         ⠿
       </span>

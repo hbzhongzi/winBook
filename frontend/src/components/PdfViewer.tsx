@@ -25,7 +25,7 @@ import {
   FIT_LABELS,
   PDF_FITS,
   PDF_PAGE_GAP,
-  PDF_ZOOM_NUDGE,
+  PDF_WHEEL_THROTTLE_MS,
   PDF_ZOOM_PRESETS,
   clampPdfZoom,
   clampSpreadLeft,
@@ -34,6 +34,7 @@ import {
   migratePdfFit,
   resolvePdfScale,
   spreadLeftMax,
+  wheelZoomDelta,
   zoomAnchorScroll,
   type PdfColumns,
   type PdfFit,
@@ -264,8 +265,11 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
       }
       canvas.style.width = r.cssW + "px";
       canvas.style.height = r.cssH + "px";
-      canvas.width = r.bmpW;
-      canvas.height = r.bmpH;
+      // D112：写 canvas.width/height 会立即清空位图。连续缩放时若每次都无条件
+      // 重设，就会出现「清空 → 异步重绘 → 再清空」的闪烁。尺寸未变则保留旧位图，
+      // pdfjs 的 render 会直接覆盖，画面稳定得多。
+      if (canvas.width !== r.bmpW) canvas.width = r.bmpW;
+      if (canvas.height !== r.bmpH) canvas.height = r.bmpH;
       const viewport = page.getViewport({ scale: r.scale * r.dpr });
       const task = page.render({ canvas, viewport });
       renderTasksRef.current.set(canvas, task);
@@ -978,15 +982,26 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [marksCtx?.jumpTarget]);
 
-  // ===== v0.2.9 / D110：Ctrl+滚轮调倍率，改为以鼠标为中心缩放 =====
+  // ===== v0.2.9 / D110 / D112：Ctrl+滚轮调倍率，以鼠标为中心缩放 =====
+  // D112：把短窗口内的连续 wheel 合并成一次 nudge —— 每个事件都 ±10% 会让
+  // canvas 反复清空重绘、锚点反复校正，是「抖动严重」的主因。锚点仍取最后一次
+  // 滚轮位置，保证合并后的那一次缩放仍以鼠标为中心。
   useEffect(() => {
     const el = isScroll ? scrollRef.current : areaRef.current;
     if (!el) return;
+    let acc = 0;
+    let timer: number | null = null;
+    const flush = () => {
+      timer = null;
+      const delta = wheelZoomDelta(acc);
+      acc = 0;
+      if (delta !== 0) viewRef.current?.onZoomNudge?.(delta);
+    };
     const onWheel = (ev: WheelEvent) => {
       if (!ev.ctrlKey) return;
       ev.preventDefault(); // 阻止浏览器默认页面缩放
       // D110：记下鼠标锚点；canvas 重排后由 applyZoomAnchor 校正滚动位置。
-      // 双重滚轮会覆盖上一次锚点（以最后一次为准），符合连续缩放直觉。
+      // 窗口内重复滚轮会覆盖上一次锚点（以最后一次为准），符合连续缩放直觉。
       const elRect = el.getBoundingClientRect();
       const content = anchorContent(el);
       if (content) {
@@ -1001,10 +1016,14 @@ export default function PdfViewer({ dataBase64, mode, initialPage, settings, get
           at: Date.now(),
         };
       }
-      viewRef.current?.onZoomNudge?.(ev.deltaY < 0 ? PDF_ZOOM_NUDGE : -PDF_ZOOM_NUDGE);
+      acc += ev.deltaY;
+      if (timer === null) timer = window.setTimeout(flush, PDF_WHEEL_THROTTLE_MS);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (timer !== null) window.clearTimeout(timer);
+    };
   }, [isScroll, pageCount, anchorContent]);
 
   // ===== D110：Ctrl+拖动平移视图 =====

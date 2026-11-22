@@ -19,6 +19,7 @@ import {
   resolvePdfScale,
   spreadLeftMax,
   spreadLeftPage,
+  wheelZoomDelta,
   zoomAnchorScroll,
   type PdfFit,
 } from "../pdfScale";
@@ -210,6 +211,20 @@ describe("pdfScale v0.2.9 — 适配解析", () => {
     expect(nudgeZoom(100, -PDF_ZOOM_NUDGE)).toBe(90);
     expect(nudgeZoom(395, PDF_ZOOM_NUDGE)).toBe(400); // 顶部钳制
     expect(nudgeZoom(55, -PDF_ZOOM_NUDGE)).toBe(50);
+  });
+
+  // D112：滚轮去抖——不足一格不动，整格折算为一次 ±10，连续格合并
+  it("wheelZoomDelta：累积滚轮 delta 量化为整数格后一次性步进", () => {
+    expect(wheelZoomDelta(0)).toBe(0);
+    expect(wheelZoomDelta(40)).toBe(0); // 触控板微动不足一格
+    expect(wheelZoomDelta(-40)).toBe(0);
+    expect(wheelZoomDelta(100)).toBe(10);
+    expect(wheelZoomDelta(-100)).toBe(-10);
+    expect(wheelZoomDelta(120)).toBe(10); // 常见鼠标一格
+    expect(wheelZoomDelta(600)).toBe(60); // 快速连滚合并成一次
+    expect(wheelZoomDelta(-250)).toBe(-30);
+    expect(wheelZoomDelta(120, 5)).toBe(5); // 自定义步长
+    expect(wheelZoomDelta(NaN)).toBe(0);
   });
 
   it("FIT_LABELS/PDF_FITS/预设表口径完整", () => {

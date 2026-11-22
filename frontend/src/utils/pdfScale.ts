@@ -201,6 +201,22 @@ export function nudgeZoom(current: number, delta: number): number {
   return clampPdfZoom(current + delta);
 }
 
+// D112：Ctrl+滚轮去抖。鼠标一格 deltaY 常见 ±100（部分设备 ±120），触控板则是一次
+// 数像素的高频小 delta。直接「每个 wheel 事件 ±10%」会让 canvas 反复清空重绘、
+// 锚点反复校正，表现为严重抖动。改为在短窗口内累积 delta，量化成整数格后一次性
+// 步进；累积不足一格则忽略，避免触控板微动导致倍率乱跳。
+export const WHEEL_DELTA_PER_NOTCH = 100;
+export const PDF_WHEEL_THROTTLE_MS = 60;
+
+/** 把累积的滚轮 delta 折算为一次 nudge 的百分比增量；不足一格返回 0 */
+export function wheelZoomDelta(accumulated: number, step = PDF_ZOOM_NUDGE): number {
+  if (!Number.isFinite(accumulated) || !Number.isFinite(step) || step <= 0) return 0;
+  // 对称取整：Math.round(-2.5) 会得到 -2，正负手感不一致；按绝对值取整再补符号
+  const notches = Math.round(Math.abs(accumulated) / WHEEL_DELTA_PER_NOTCH);
+  if (notches === 0) return 0;
+  return Math.sign(accumulated) * notches * step;
+}
+
 /**
  * D110：以鼠标为锚点的滚动位置校正（Ctrl+滚轮缩放）。
  *
