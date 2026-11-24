@@ -27,7 +27,12 @@ import {
   clampInkAlpha,
 } from "../utils/pdfInk";
 import type { InkTool } from "./PdfInkCanvas";
-import { inkDockSide, inkDockX, type InkDockSide } from "../utils/inkToolbar";
+import {
+  inkDockSide,
+  inkDockX,
+  clampInkToolbarPos,
+  type InkDockSide,
+} from "../utils/inkToolbar";
 
 const BRUSH_META: { key: Exclude<PdfBrush, "eraser">; label: string; title: string }[] = [
   { key: "highlighter", label: "高亮", title: "高亮笔：半透明粗笔，不挡原文" },
@@ -147,42 +152,72 @@ export default function PdfInkToolbar({
     baseY: number;
   } | null>(null);
 
+  /**
+   * D115：由「拖拽起点 + 当前指针坐标」直接算出落点，onMove/onUp 共用。
+   * 关键：绝不从 React state（pos/dock）读拖拽过程中的位置——pointermove 的
+   * setPos 可能尚未提交，pointerup 的闭包里仍是旧值，D112 因此判定失效。
+   * 所有坐标只来自 ref + 事件 + DOM，绕开渲染时序。
+   * 滚动容器里还要补 scrollLeft/scrollTop，否则绝对定位的 left/top 会偏移。
+   */
+  const dragLanded = (
+    d: NonNullable<typeof dragRef.current>,
+    ev: React.PointerEvent<HTMLSpanElement>
+  ) => {
+    const bar = barRef.current;
+    const parent = bar?.offsetParent as HTMLElement | null;
+    if (!bar || !parent) return null;
+    const pr = parent.getBoundingClientRect();
+    const p = clampInkToolbarPos(
+      d.baseX,
+      d.baseY,
+      ev.clientX - d.startX,
+      ev.clientY - d.startY,
+      pr.width - bar.offsetWidth,
+      pr.height - bar.offsetHeight
+    );
+    return { ...p, parentW: pr.width, barW: bar.offsetWidth };
+  };
+
   const onGripDown = (ev: React.PointerEvent<HTMLSpanElement>) => {
     if (ev.button !== 0) return;
     const bar = barRef.current;
     const parent = bar?.offsetParent as HTMLElement | null;
     if (!bar || !parent) return;
     ev.preventDefault();
-    // 起点：已拖过用 pos，否则用当前实际位置（默认 CSS 居中所处的位置）
+    // 起点：已拖过用 posRef（同步值），否则用当前实际位置（默认 CSS 居中所处的位置）
     const br = bar.getBoundingClientRect();
     const pr = parent.getBoundingClientRect();
-    const baseX = pos?.x ?? br.left - pr.left;
-    const baseY = pos?.y ?? br.top - pr.top;
+    const baseX = posRef.current?.x ?? br.left - pr.left + parent.scrollLeft;
+    const baseY = posRef.current?.y ?? br.top - pr.top + parent.scrollTop;
     dragRef.current = { startX: ev.clientX, startY: ev.clientY, baseX, baseY };
     ev.currentTarget.setPointerCapture?.(ev.pointerId);
   };
 
   const onGripMove = (ev: React.PointerEvent<HTMLSpanElement>) => {
     const d = dragRef.current;
-    const bar = barRef.current;
-    const parent = bar?.offsetParent as HTMLElement | null;
-    if (!d || !bar || !parent) return;
-    const pr = parent.getBoundingClientRect();
-    const maxX = Math.max(0, pr.width - bar.offsetWidth);
-    const maxY = Math.max(0, pr.height - bar.offsetHeight);
-    const x = Math.min(maxX, Math.max(0, d.baseX + (ev.clientX - d.startX)));
-    const y = Math.min(maxY, Math.max(0, d.baseY + (ev.clientY - d.startY)));
-    setPos({ x, y });
+    if (!d) return;
+    const landed = dragLanded(d, ev);
+    if (!landed) return;
+    const p = { x: landed.x, y: landed.y };
+    posRef.current = p; // 同步 ref：pointerup 可能先于 setPos 提交
+    setPos(p);
   };
 
   const onGripUp = (ev: React.PointerEvent<HTMLSpanElement>) => {
-    // D112：松手时按落点判定靠边停靠；横/纵切换后的重新贴边交给下面的 layout effect
-    const bar = barRef.current;
-    const parent = bar?.offsetParent as HTMLElement | null;
-    if (bar && parent && pos) {
-      setDock(inkDockSide(pos.x, bar.offsetWidth, parent.clientWidth));
-    }
+    const d = dragRef.current;
     dragRef.current = null;
+    if (ev.type !== "pointercancel" && d) {
+      const landed = dragLanded(d, ev);
+      if (landed) {
+        // D115：按落点判定靠边；同一次拖拽内立即吸附，dock 没变也要贴边
+        const nextDock = inkDockSide(landed.x, landed.barW, landed.parentW);
+        const x = nextDock ? inkDockX(nextDock, landed.barW, landed.parentW) : landed.x;
+        const p = { x, y: landed.y };
+        posRef.current = p;
+        setPos(p);
+        setDock(nextDock);
+      }
+    }
     if (ev.currentTarget.hasPointerCapture?.(ev.pointerId)) {
       ev.currentTarget.releasePointerCapture?.(ev.pointerId);
     }
@@ -194,25 +229,31 @@ export default function PdfInkToolbar({
     const bar = barRef.current;
     const parent = bar?.offsetParent as HTMLElement | null;
     if (!bar || !parent) return;
-    const maxX = Math.max(0, parent.clientWidth - bar.offsetWidth);
-    const maxY = Math.max(0, parent.clientHeight - bar.offsetHeight);
+    const pr = parent.getBoundingClientRect();
+    const maxX = Math.max(0, pr.width - bar.offsetWidth);
+    const maxY = Math.max(0, pr.height - bar.offsetHeight);
     if (pos.x > maxX || pos.y > maxY) {
       setPos({ x: Math.min(pos.x, maxX), y: Math.min(pos.y, maxY) });
     }
   }, [pos]);
 
-  // D112：横/纵切换后宽度变化，按新宽度重新贴边（纵向）或钳回容器（横向）。
+  // D112/D115：横/纵切换后宽度变化，按新宽度重新贴边（纵向）或钳回容器（横向）。
   // 依赖只放 dock：拖动过程中的 pos 已由 onGripMove 钳制，无需在这里反复写回。
   useLayoutEffect(() => {
     const bar = barRef.current;
     const parent = bar?.offsetParent as HTMLElement | null;
     const p = posRef.current;
     if (!bar || !parent || !p) return;
-    const maxX = Math.max(0, parent.clientWidth - bar.offsetWidth);
-    const maxY = Math.max(0, parent.clientHeight - bar.offsetHeight);
-    const x = dock ? inkDockX(dock, bar.offsetWidth, parent.clientWidth) : Math.min(p.x, maxX);
+    const pr = parent.getBoundingClientRect();
+    const maxX = Math.max(0, pr.width - bar.offsetWidth);
+    const maxY = Math.max(0, pr.height - bar.offsetHeight);
+    const x = dock ? inkDockX(dock, bar.offsetWidth, pr.width) : Math.min(p.x, maxX);
     const y = Math.min(p.y, maxY);
-    if (x !== p.x || y !== p.y) setPos({ x, y });
+    if (x !== p.x || y !== p.y) {
+      const next = { x, y };
+      posRef.current = next;
+      setPos(next);
+    }
   }, [dock]);
 
   return (

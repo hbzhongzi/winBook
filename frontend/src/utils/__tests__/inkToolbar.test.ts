@@ -3,6 +3,7 @@ import {
   INK_DOCK_EDGE,
   inkDockSide,
   inkDockX,
+  clampInkToolbarPos,
 } from "../inkToolbar";
 
 describe("D112 画笔工具栏靠边停靠判定", () => {
@@ -41,5 +42,33 @@ describe("D112 画笔工具栏靠边停靠判定", () => {
   it("容器比工具栏窄时不产生负坐标", () => {
     expect(inkDockX("right", 500, 300)).toBe(0);
     expect(inkDockX("left", 500, 300)).toBe(12);
+  });
+
+  it("工具栏几乎占满容器时，拖到最左/最右仍能判定靠边", () => {
+    // 复现 D115 真机场景：窗口 980px、横向工具栏 900px，可移动余量只有 80px。
+    const parentW = 980;
+    const barW = 900;
+    expect(inkDockSide(0, barW, parentW)).toBe("left"); // 左距 0 / 右距 80
+    expect(inkDockSide(80, barW, parentW)).toBe("right"); // 左距 80 / 右距 0
+  });
+});
+
+describe("D115 拖拽落点钳制（不依赖 React state）", () => {
+  it("基准坐标 + 位移落在容器内取实际值", () => {
+    expect(clampInkToolbarPos(10, 20, 30, 40, 500, 300)).toEqual({ x: 40, y: 60 });
+  });
+
+  it("越过右/下边界时钳到上限", () => {
+    expect(clampInkToolbarPos(400, 250, 500, 500, 500, 300)).toEqual({ x: 500, y: 300 });
+  });
+
+  it("越过左/上边界时钳到 0，且负上限按 0 处理", () => {
+    expect(clampInkToolbarPos(50, 50, -200, -200, 500, 300)).toEqual({ x: 0, y: 0 });
+    expect(clampInkToolbarPos(0, 0, 10, 10, -100, -100)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("非法输入回退到 0,0 而不是 NaN 污染样式", () => {
+    expect(clampInkToolbarPos(NaN, 0, 1, 1, 500, 300)).toEqual({ x: 0, y: 0 });
+    expect(clampInkToolbarPos(0, 0, Infinity, 1, 500, 300)).toEqual({ x: 0, y: 0 });
   });
 });

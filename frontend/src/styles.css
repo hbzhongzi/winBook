@@ -415,9 +415,13 @@ pre.txt-viewer {
   flex-wrap: nowrap;
   align-items: stretch;
   gap: 8px;
-  max-width: none;
+  /* D115：固定窄宽度，避免内部「标签+滑块+读数」把纵向条撑成宽条。
+     148px 足够放下最宽的「清空本页」按钮与一行字段；橡皮示例单独换行。 */
+  width: 148px;
+  max-width: 148px;
   max-height: calc(100% - 24px);
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px;
 }
 .pdf-ink-bar.vertical .ib-grip {
@@ -445,12 +449,21 @@ pre.txt-viewer {
   text-align: center;
 }
 .pdf-ink-bar.vertical .ib-style { gap: 8px; }
-.pdf-ink-bar.vertical .ib-field { width: 100%; }
+/* 纵向窄条里字段改为两行：标签独占一行，滑块+读数一行。
+   否则「粗细 [====] 2.5」横向塞进 132px 内容宽会溢出。 */
+.pdf-ink-bar.vertical .ib-field {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.pdf-ink-bar.vertical .ib-field-label { width: 100%; }
 .pdf-ink-bar.vertical .ib-range {
   flex: 1;
   width: auto;
   min-width: 48px;
 }
+/* 橡皮范围：示例圆与 4–24 刻度在窄条里挤不下，刻度隐藏（title 里仍有说明） */
+.pdf-ink-bar.vertical .ib-range-scale { display: none; }
 .pdf-footer {
   position: absolute;
   bottom: 10px;

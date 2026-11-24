@@ -38,3 +38,26 @@ export function inkDockX(
   if (side === "left") return 12;
   return Math.max(0, parentWidth - barWidth - 12);
 }
+
+/**
+ * D115：拖拽落点钳制（纯函数，供 pointermove/up 共用）。
+ * 输入全部来自「按下时的基准坐标 + 当前指针位移 + 容器上限」，不依赖任何
+ * React state，从根上避开 pointerup 闭包里 pos 还是旧值导致停靠判定失效。
+ */
+export function clampInkToolbarPos(
+  baseX: number,
+  baseY: number,
+  dx: number,
+  dy: number,
+  maxX: number,
+  maxY: number
+): { x: number; y: number } {
+  const nums = [baseX, baseY, dx, dy, maxX, maxY];
+  if (!nums.every((n) => Number.isFinite(n))) return { x: 0, y: 0 };
+  const hiX = Math.max(0, maxX);
+  const hiY = Math.max(0, maxY);
+  return {
+    x: Math.min(hiX, Math.max(0, baseX + dx)),
+    y: Math.min(hiY, Math.max(0, baseY + dy)),
+  };
+}
