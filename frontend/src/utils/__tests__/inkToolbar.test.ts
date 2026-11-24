@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   INK_DOCK_EDGE,
+  INK_VERTICAL_W,
   inkDockSide,
   inkDockX,
   clampInkToolbarPos,
@@ -50,6 +51,35 @@ describe("D112 画笔工具栏靠边停靠判定", () => {
     const barW = 900;
     expect(inkDockSide(0, barW, parentW)).toBe("left"); // 左距 0 / 右距 80
     expect(inkDockSide(80, barW, parentW)).toBe("right"); // 左距 80 / 右距 0
+  });
+
+  it("D116：宽工具栏停在可移动范围中部时保持横向（旧实现误判为停靠）", () => {
+    // 复现判定缺陷：900px 工具栏 / 980px 容器，旧口径右距=980-(x+900) 恒 <160，
+    // 中间 x=40 时左距右距相等仍被判 left。新口径 maxX=80、阈值=80/3≈26.7，中间保持 null。
+    const parentW = 980;
+    const barW = 900;
+    expect(inkDockSide(40, barW, parentW)).toBeNull();
+    expect(inkDockSide(10, barW, parentW)).toBe("left");
+    expect(inkDockSide(70, barW, parentW)).toBe("right");
+  });
+
+  it("D116：固定阈值与 maxX/3 取更小者", () => {
+    // 大容器小工具栏：maxX/3=600 > 160，仍用固定 160
+    expect(inkDockSide(100, 200, 2000)).toBe("left");
+    expect(inkDockSide(170, 200, 2000)).toBeNull();
+    // 小容器：maxX/3=33.3 < 160，用 33.3
+    expect(inkDockSide(30, 200, 300)).toBe("left");
+    expect(inkDockSide(50, 200, 300)).toBeNull();
+  });
+
+  it("D116：工具栏比容器宽或位置越界时不产生错误停靠", () => {
+    expect(inkDockSide(0, 1200, 980)).toBeNull(); // 比容器宽，无移动空间
+    expect(inkDockSide(2000, 200, 300)).toBe("right"); // 越右界钳到最右
+    expect(inkDockSide(-50, 200, 300)).toBe("left"); // 越左界钳到最左
+  });
+
+  it("D116：纵向宽度常量固定，供停靠定位与预览共用", () => {
+    expect(INK_VERTICAL_W).toBe(148);
   });
 });
 

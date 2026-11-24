@@ -31,6 +31,7 @@ import {
   inkDockSide,
   inkDockX,
   clampInkToolbarPos,
+  INK_VERTICAL_W,
   type InkDockSide,
 } from "../utils/inkToolbar";
 
@@ -38,6 +39,9 @@ const BRUSH_META: { key: Exclude<PdfBrush, "eraser">; label: string; title: stri
   { key: "highlighter", label: "高亮", title: "高亮笔：半透明粗笔，不挡原文" },
   { key: "pen", label: "自由笔", title: "自由笔：实色细线，可写字圈画" },
 ];
+
+/** D116：停靠预览 ghost 的基准高度，实际按容器高度收缩，避免小窗口溢出 */
+const DOCK_PREVIEW_H = 360;
 
 // 粗细：D102 改为连续可调控的进度条（滑块）。
 // 旧实现是三档按钮（细/中/粗），只能跳档、无法微调——用户在 PDF 上写字时
@@ -145,6 +149,14 @@ export default function PdfInkToolbar({
   const [dock, setDock] = useState<InkDockSide>(null);
   const posRef = useRef(pos);
   posRef.current = pos;
+  // D116：拖动中实时预览将要停靠的一侧；dragging 用于禁用过渡动画保证跟手。
+  const [preview, setPreview] = useState<{
+    side: Exclude<InkDockSide, null>;
+    y: number;
+    parentW: number;
+    parentH: number;
+  } | null>(null);
+  const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{
     startX: number;
     startY: number;
@@ -175,7 +187,7 @@ export default function PdfInkToolbar({
       pr.width - bar.offsetWidth,
       pr.height - bar.offsetHeight
     );
-    return { ...p, parentW: pr.width, barW: bar.offsetWidth };
+    return { ...p, parentW: pr.width, parentH: pr.height, barW: bar.offsetWidth };
   };
 
   const onGripDown = (ev: React.PointerEvent<HTMLSpanElement>) => {
@@ -190,6 +202,7 @@ export default function PdfInkToolbar({
     const baseX = posRef.current?.x ?? br.left - pr.left + parent.scrollLeft;
     const baseY = posRef.current?.y ?? br.top - pr.top + parent.scrollTop;
     dragRef.current = { startX: ev.clientX, startY: ev.clientY, baseX, baseY };
+    setDragging(true);
     ev.currentTarget.setPointerCapture?.(ev.pointerId);
   };
 
@@ -201,17 +214,28 @@ export default function PdfInkToolbar({
     const p = { x: landed.x, y: landed.y };
     posRef.current = p; // 同步 ref：pointerup 可能先于 setPos 提交
     setPos(p);
+    // D116：拖动中就用同一判定函数预判停靠侧，提前显示 ghost——所见即所得，
+    // 用户松手前即可观察将要停靠的位置与形态，避免松手瞬间跳变带来突兀感。
+    const nextDock = inkDockSide(landed.x, landed.barW, landed.parentW);
+    setPreview(
+      nextDock
+        ? { side: nextDock, y: landed.y, parentW: landed.parentW, parentH: landed.parentH }
+        : null
+    );
   };
 
   const onGripUp = (ev: React.PointerEvent<HTMLSpanElement>) => {
     const d = dragRef.current;
     dragRef.current = null;
+    setDragging(false);
+    setPreview(null);
     if (ev.type !== "pointercancel" && d) {
       const landed = dragLanded(d, ev);
       if (landed) {
-        // D115：按落点判定靠边；同一次拖拽内立即吸附，dock 没变也要贴边
+        // D116：按落点判定靠边；停靠定位改用固定纵向宽——横/纵切换时 offsetWidth
+        // 正处于过渡中间态，读它会把纵向条贴到错误位置（D115 遗留隐患）。
         const nextDock = inkDockSide(landed.x, landed.barW, landed.parentW);
-        const x = nextDock ? inkDockX(nextDock, landed.barW, landed.parentW) : landed.x;
+        const x = nextDock ? inkDockX(nextDock, INK_VERTICAL_W, landed.parentW) : landed.x;
         const p = { x, y: landed.y };
         posRef.current = p;
         setPos(p);
@@ -247,7 +271,7 @@ export default function PdfInkToolbar({
     const pr = parent.getBoundingClientRect();
     const maxX = Math.max(0, pr.width - bar.offsetWidth);
     const maxY = Math.max(0, pr.height - bar.offsetHeight);
-    const x = dock ? inkDockX(dock, bar.offsetWidth, pr.width) : Math.min(p.x, maxX);
+    const x = dock ? inkDockX(dock, INK_VERTICAL_W, pr.width) : Math.min(p.x, maxX);
     const y = Math.min(p.y, maxY);
     if (x !== p.x || y !== p.y) {
       const next = { x, y };
@@ -256,18 +280,43 @@ export default function PdfInkToolbar({
     }
   }, [dock]);
 
+  // D116：ghost 高度按容器收缩，位置跟随当前拖拽高度并钳在容器内
+  const previewH = preview
+    ? Math.max(120, Math.min(DOCK_PREVIEW_H, preview.parentH - 24))
+    : 0;
+
   return (
-    <div
-      ref={barRef}
-      className={"pdf-ink-bar" + (dock ? " vertical" : "")}
-      role="toolbar"
-      aria-label="PDF 画笔"
-      style={
-        pos
-          ? { left: pos.x, top: pos.y, bottom: "auto", transform: "none" }
-          : undefined
-      }
-    >
+    <>
+      {preview && (
+        <div
+          className="ib-dock-preview"
+          aria-hidden="true"
+          style={{
+            left: inkDockX(preview.side, INK_VERTICAL_W, preview.parentW),
+            top: Math.max(12, Math.min(preview.y, preview.parentH - previewH - 12)),
+            width: INK_VERTICAL_W,
+            height: previewH,
+          }}
+        >
+          <span className="ib-dock-preview-mark">⠿</span>
+          <span className="ib-dock-preview-text">
+            松手停靠到{preview.side === "left" ? "左" : "右"}侧
+          </span>
+        </div>
+      )}
+      <div
+        ref={barRef}
+        className={
+          "pdf-ink-bar" + (dock ? " vertical" : "") + (dragging ? " dragging" : "")
+        }
+        role="toolbar"
+        aria-label="PDF 画笔"
+        style={
+          pos
+            ? { left: pos.x, top: pos.y, bottom: "auto", transform: "none" }
+            : undefined
+        }
+      >
       {/* D109：拖动手柄——按住可把工具栏移到阅读区任意位置（落到侧边也不挡正文） */}
       <span
         className="ib-grip"
@@ -441,6 +490,7 @@ export default function PdfInkToolbar({
           完成
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

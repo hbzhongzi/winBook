@@ -330,6 +330,43 @@ pre.txt-viewer {
   border: 1px solid var(--border-soft);
   background: var(--surface-bg);
   box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
+  /* D116：横↔纵切换与贴边吸附改为平滑过渡，消除瞬间跳变的生硬感；
+     拖动中由 .dragging 关闭过渡，保证手柄跟手无延迟。 */
+  transition: left .22s cubic-bezier(.2, .7, .2, 1),
+              top .22s cubic-bezier(.2, .7, .2, 1),
+              width .22s cubic-bezier(.2, .7, .2, 1),
+              height .22s cubic-bezier(.2, .7, .2, 1),
+              padding .22s ease,
+              border-radius .22s ease;
+}
+.pdf-ink-bar.dragging { transition: none; }
+/* D116：拖动靠近侧边时的停靠预览——半透明虚线纵向轮廓，松手前即可预判落位与形态 */
+.ib-dock-preview {
+  position: absolute;
+  z-index: 11;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--active-bg);
+  color: var(--accent);
+  pointer-events: none;
+  animation: ib-dock-preview-in .18s ease-out;
+}
+.ib-dock-preview-mark { font-size: 20px; opacity: .7; line-height: 1; }
+.ib-dock-preview-text {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 2px;
+  white-space: nowrap;
+}
+@keyframes ib-dock-preview-in {
+  from { opacity: 0; transform: scale(.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 .pdf-ink-bar .ib-group { display: flex; align-items: center; gap: 4px; flex: none; }
 /* D109：拖动手柄——按住移动工具栏，双击复位到默认底部居中 */
